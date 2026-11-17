@@ -1,0 +1,28 @@
+Shruthi XT – Installation auf dem Mac
+=====================================
+
+1. ZIP entpacken.
+
+2. Dateien kopieren (im Finder: Gehe zu > Gehe zum Ordner …):
+   - "Shruthi XT.component"  ->  ~/Library/Audio/Plug-Ins/Components/
+   - "Shruthi XT.vst3"       ->  ~/Library/Audio/Plug-Ins/VST3/
+   - "Shruthi XT.app" (Standalone, optional) -> Programme
+
+3. Sperre von macOS entfernen (das Plugin ist nicht bei Apple notarisiert).
+   Terminal öffnen und einfügen:
+
+   xattr -dr com.apple.quarantine ~/Library/Audio/Plug-Ins/Components/"Shruthi XT.component"
+   xattr -dr com.apple.quarantine ~/Library/Audio/Plug-Ins/VST3/"Shruthi XT.vst3"
+
+4. Ableton Live: Einstellungen > Plug-Ins
+   - "Audio Units v2 verwenden" bzw. "VST3-Plug-In-Systemordner verwenden" einschalten
+   - "Neu scannen" klicken
+
+5. Im Browser unter Plug-Ins > Shruthi Emulation > Shruthi XT auf eine MIDI-Spur ziehen.
+
+Tipps
+- Tempo: Der Sequencer folgt dem Ableton-Tempo (System-Seite, Parameter "syn").
+- JAM ist ein automatisierbarer Parameter ("jam") und lässt sich per MIDI-Map belegen.
+- Program Change / Ableton-Preset-Menü: die 128 Werksprogramme.
+- Importierte SysEx-Patches und User-Plätze liegen in
+  ~/Library/Application Support/Shruthi XT/store.json und gelten für alle Instanzen.

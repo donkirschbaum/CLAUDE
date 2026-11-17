@@ -1,0 +1,41 @@
+name: Build macOS (AU + VST3)
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure (universal: Apple Silicon + Intel)
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0
+
+      - name: Build
+        run: cmake --build build --config Release -j 4
+
+      - name: Package (ad-hoc signed)
+        run: |
+          A="build/ShruthiXT_artefacts/Release"
+          mkdir -p dist
+          cp -R "$A/AU/Shruthi XT.component" dist/
+          cp -R "$A/VST3/Shruthi XT.vst3" dist/
+          cp -R "$A/Standalone/Shruthi XT.app" dist/
+          codesign --force --deep -s - "dist/Shruthi XT.component" "dist/Shruthi XT.vst3" "dist/Shruthi XT.app"
+          cp INSTALLIEREN.txt LICENSE dist/
+          cd dist && zip -r -y ../ShruthiXT-macOS.zip .
+
+      - name: Validate Audio Unit (auval)
+        continue-on-error: true
+        run: |
+          mkdir -p ~/Library/Audio/Plug-Ins/Components
+          cp -R "dist/Shruthi XT.component" ~/Library/Audio/Plug-Ins/Components/
+          killall -9 AudioComponentRegistrar || true
+          auval -v aumu Shxt Shem
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ShruthiXT-macOS
+          path: ShruthiXT-macOS.zip
