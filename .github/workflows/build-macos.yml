@@ -4,6 +4,9 @@ on:
   push:
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: macos-latest
@@ -39,3 +42,10 @@ jobs:
         with:
           name: ShruthiXT-macOS
           path: ShruthiXT-macOS.zip
+
+      - name: Publish as release "latest"
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete latest --yes --cleanup-tag || true
+          gh release create latest ShruthiXT-macOS.zip --title "Shruthi XT – neuester Build" --notes "Automatisch gebaut aus ${GITHUB_SHA::7}. Installation: siehe INSTALLIEREN.txt im ZIP." --target "$GITHUB_SHA"
