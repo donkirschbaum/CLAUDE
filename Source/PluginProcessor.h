@@ -40,11 +40,20 @@ public:
     void applySysFromUI (const juce::var& g);
     void postUIEvent (const juce::var& m);        // notes, jam, bend ...
     void readParamValues (int* out) const;        // current scalar params
+    void readMtxValues (int* out) const;          // 36 matrix params
     int  currentStep() const { return lastStep.load(); }
     bool jamState() const;
     juce::var loadStore();
     void saveStore (const juce::var& data);
     std::atomic<int> stateVersion { 0 };          // bumps when patch/sys replaced natively
+
+    // --- MIDI CC mapping (Shruthi default map + learn) ---
+    juce::var mapAsVar() const;
+    void setLearn (const juce::String& id);       // empty = cancel
+    void unmap (int cc);
+    void setMapMode (int cc, int mode);           // 0 abs, 1 rel 64, 2 rel 2's complement, 3 toggle
+    void resetMap (bool shruthiDefaults);
+    std::atomic<int> mapVersion { 0 };
 
     juce::AudioProcessorValueTreeState apvts;
 
@@ -57,6 +66,16 @@ private:
 
     std::unique_ptr<shruthi::Engine> engine;
     std::array<std::atomic<float>*, shruthi::kNumParams> paramPtr {};
+    std::array<std::array<std::atomic<float>*, 3>, 12> mtxPtr {};
+    std::vector<juce::RangedAudioParameter*> mappable;
+    juce::StringArray mappableIds;
+    std::array<std::atomic<int>, 128> ccParam;
+    std::array<std::atomic<int>, 128> ccMode;
+    std::atomic<int> learnTarget { -1 };
+    void applyCC (int cc, int value);
+    void loadMapFromVar (const juce::var& v);
+    void saveMapGlobal();
+    bool mapFromState = false;
     std::atomic<float>* volPtr = nullptr;
     std::atomic<float>* jamPtr = nullptr;
 

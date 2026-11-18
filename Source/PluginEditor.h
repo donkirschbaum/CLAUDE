@@ -21,7 +21,8 @@ private:
     std::unique_ptr<juce::WebBrowserComponent> web;
     std::unique_ptr<juce::FileChooser> chooser;
     int lastParams[shruthi::kNumParams] {};
-    int lastStep = -2, lastVersion = -1; bool lastJam = false, ready = false;
+    int lastMtx[36] {};
+    int lastStep = -2, lastVersion = -1, lastMapVersion = -1; bool lastJam = false, ready = false;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ShruthiEditor)
 };

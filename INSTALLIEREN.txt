@@ -20,6 +20,13 @@ Shruthi XT – Installation auf dem Mac
 
 5. Im Browser unter Plug-Ins > Shruthi Emulation > Shruthi XT auf eine MIDI-Spur ziehen.
 
+MIDI / Encoder
+- Ab Werk gilt die CC-Belegung des originalen Shruthi-1 (z. B. CC 20-31 Oszillatoren/Mixer,
+  CC 14/74 Cutoff, CC 15/71 Resonanz, CC 102-119 Hüllkurven und LFOs, CC 75-81 Sequencer/Arp).
+- Eigene Zuweisung: im Plugin-Fenster im Bereich "midi-zuweisung" auf "learn" tippen, Regler antippen,
+  Encoder bewegen. Endlos-Encoder werden meist automatisch als relativ erkannt, sonst Modus umstellen.
+- Alle Parameter inkl. der 12 Matrix-Slots sind auch in Ableton automatisierbar und per Ableton-MIDI-Map belegbar.
+
 Tipps
 - Tempo: Der Sequencer folgt dem Ableton-Tempo (System-Seite, Parameter "syn").
 - JAM ist ein automatisierbarer Parameter ("jam") und lässt sich per MIDI-Map belegen.

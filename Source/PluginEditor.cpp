@@ -19,7 +19,7 @@ ShruthiEditor::ShruthiEditor (ShruthiProcessor& p)
     setResizable (true, true);
     setResizeLimits (420, 500, 1600, 1400);
     setSize (1000, 780);
-    proc.readParamValues (lastParams);
+    proc.readParamValues (lastParams); proc.readMtxValues (lastMtx);
     startTimerHz (30);
 }
 
@@ -55,13 +55,14 @@ void ShruthiEditor::onUIEvent (const juce::var& m)
         auto st = proc.stateAsVar();
         st.getDynamicObject()->setProperty ("t", "state");
         emit (st);
-        proc.readParamValues (lastParams);
+        proc.readParamValues (lastParams); proc.readMtxValues (lastMtx);
         lastVersion = proc.stateVersion.load();
+        lastMapVersion = -1;
     }
     else if (t == "patch")
     {
         proc.applyPatchFromUI (m["p"]);
-        proc.readParamValues (lastParams);
+        proc.readParamValues (lastParams); proc.readMtxValues (lastMtx);
     }
     else if (t == "sys") proc.applySysFromUI (m["g"]);
     else if (t == "store") proc.saveStore (m["data"]);
@@ -81,6 +82,11 @@ void ShruthiEditor::onUIEvent (const juce::var& m)
                 emit (juce::var (o));
             });
     }
+    else if (t == "learn") proc.setLearn (m["id"].toString());
+    else if (t == "unmap") proc.unmap ((int) m["cc"]);
+    else if (t == "mapmode") proc.setMapMode ((int) m["cc"], (int) m["mode"]);
+    else if (t == "mapreset") proc.resetMap (true);
+    else if (t == "mapclear") proc.resetMap (false);
     else if (t == "data") {}
     else proc.postUIEvent (m);
 }
@@ -92,16 +98,25 @@ void ShruthiEditor::timerCallback()
     {
         lastVersion = proc.stateVersion.load();
         auto st = proc.stateAsVar(); st.getDynamicObject()->setProperty ("t", "state"); emit (st);
-        proc.readParamValues (lastParams);
+        proc.readParamValues (lastParams); proc.readMtxValues (lastMtx);
         return;
     }
     int now[shruthi::kNumParams]; proc.readParamValues (now);
     auto* changed = new juce::DynamicObject(); bool any = false;
     for (int i = 0; i < shruthi::kNumParams; ++i)
         if (now[i] != lastParams[i]) { changed->setProperty (shruthi::kParamInfo[i].id, now[i]); lastParams[i] = now[i]; any = true; }
+    int mnow[36]; proc.readMtxValues (mnow);
+    for (int i = 0; i < 36; ++i)
+        if (mnow[i] != lastMtx[i]) { changed->setProperty ("m" + juce::String (i / 3 + 1) + "sda"[i % 3], mnow[i]); lastMtx[i] = mnow[i]; any = true; }
     if (any) { auto* o = new juce::DynamicObject(); o->setProperty ("t", "params"); o->setProperty ("v", juce::var (changed)); emit (juce::var (o)); }
     else delete changed;
 
+    if (proc.mapVersion.load() != lastMapVersion)
+    {
+        lastMapVersion = proc.mapVersion.load();
+        auto* o = new juce::DynamicObject(); o->setProperty ("t", "map"); o->setProperty ("list", proc.mapAsVar());
+        emit (juce::var (o));
+    }
     const int s = proc.currentStep();
     if (s != lastStep) { lastStep = s; auto* o = new juce::DynamicObject(); o->setProperty ("t", "step"); o->setProperty ("s", s); emit (juce::var (o)); }
     const bool j = proc.jamState();

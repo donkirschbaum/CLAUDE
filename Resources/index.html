@@ -152,6 +152,13 @@ footer b{color:#cfcabd}
 .ops{display:grid;grid-template-columns:30px 1fr 1fr 1fr;gap:4px 6px;align-items:center;font-size:11px}
 .ops select{background:#232427;color:#eee;border:1px solid #444;border-radius:4px;height:26px;font-size:12px;width:100%}
 .ops .h{color:#8f8b82;font-size:9px;letter-spacing:.1em}
+
+.maplist{display:grid;grid-template-columns:46px 1fr 74px 30px;gap:4px 6px;align-items:center;font-size:12px;max-height:260px;overflow:auto}
+.maplist select{background:#232427;color:#eee;border:1px solid #444;border-radius:4px;height:26px;font-size:12px}
+.maplist .cc{font-family:"Courier New",monospace;color:#ffd0c4}
+.maplist button{background:#2a2b2f;border:1px solid #444;border-radius:5px;height:26px;cursor:pointer;color:#ddd}
+.learning .knob .k{box-shadow:0 0 0 2px #ffd84a88,0 3px 6px #000d}
+.learning .knob.learnsel .k{box-shadow:0 0 0 3px #ffd84a,0 0 14px #ffd84a}
 </style>
 </head>
 <body>
@@ -219,6 +226,20 @@ footer b{color:#cfcabd}
     <div class="mtx" id="mtx"></div>
     <h2 class="legend" style="margin-top:14px">operatoren</h2>
     <div class="ops" id="ops"></div>
+  </div>
+
+  <div class="panel" id="midiPanel" style="display:none">
+    <h2 class="legend">midi-zuweisung · encoder / cc</h2>
+    <div class="brwh" style="margin-bottom:8px">
+      <button class="chip" id="learnBtn">learn</button>
+      <span class="hint" id="learnMsg" style="margin:0">„learn“ antippen, dann einen Regler (oder Matrix-Slot, Jam, Volume) antippen und den Encoder bewegen.</span>
+    </div>
+    <div class="maplist" id="maplist"></div>
+    <div class="brwh" style="margin-top:8px">
+      <button class="mini" id="mapReset">Shruthi-Standard</button>
+      <button class="mini" id="mapClear">alle löschen</button>
+    </div>
+    <div class="hint">Modus: abs = normaler Regler (0–127) · rel64 = Endlos-Encoder 64 ± · rel2c = Endlos-Encoder Zweierkomplement (1 / 127) · tgl = Taster schaltet um. Die Zuweisung gilt für neue Instanzen und wird im Live-Set gespeichert.</div>
   </div>
 
   <footer>
@@ -868,7 +889,7 @@ function makeKnob(parent,getId,label){
  const k={el,getId,ring:el.querySelector('.ring'),cap:el.querySelector('.k'),kl:el.querySelector('.kl')};
  k.kl.textContent=label||'';
  let sy=0,sx=0,sv=0,lastTap=0;
- el.addEventListener('pointerdown',e=>{const id=getId();if(!id)return;e.preventDefault();try{el.setPointerCapture(e.pointerId);}catch(_){}sy=e.clientY;sx=e.clientX;sv=PARAMS[id].get();
+ el.addEventListener('pointerdown',e=>{const id=getId();if(!id)return;if(ui.learn){e.preventDefault();learnPick(id,el);return;}e.preventDefault();try{el.setPointerCapture(e.pointerId);}catch(_){}sy=e.clientY;sx=e.clientX;sv=PARAMS[id].get();
   const t=performance.now();if(t-lastTap<300&&id!=='vol'){setParam(id,defaultOf(id));sv=PARAMS[id].get();}lastTap=t;el.classList.add('act');if(id!=='vol')showTmp(id);});
  el.addEventListener('pointermove',e=>{if(!el.classList.contains('act'))return;const id=getId();const d=PARAMS[id];const range=Math.min(d.max-d.min,600);const spp=Math.max(range/200,1/20);
   setParam(id,sv+((sy-e.clientY)+(e.clientX-sx)*.5)*spp,id==='vol');});
@@ -1061,7 +1082,7 @@ for(let i=0;i<12;i++){
  const v=document.createElement('span');v.className='val';v.style.minWidth='0';
  s.onchange=()=>{P.mtx[i][0]=+s.value;patchDirty=dirty=true;};
  d.onchange=()=>{P.mtx[i][1]=+d.value;patchDirty=dirty=true;};
- a.oninput=()=>{P.mtx[i][2]=+a.value;v.textContent=(a.value>0?'+':'')+a.value;patchDirty=true;ui.slot=i;};
+ a.oninput=()=>{if(ui.learn){a.value=P.mtx[i][2];return;}P.mtx[i][2]=+a.value;v.textContent=(a.value>0?'+':'')+a.value;patchDirty=true;ui.slot=i;};
  [n,s,d,a,v].forEach(x=>mtxEl.appendChild(x));mrows.push({s,d,a,v});
 }
 const opsEl=document.getElementById('ops');const orows=[];
@@ -1117,7 +1138,7 @@ strip('modw',false,v=>send({t:'mw',v}));
 /* jam */
 const jamBtns=[document.getElementById('jam'),document.getElementById('jam2')];
 function setJam(on){ui.jam=on;jamBtns.forEach(b=>b.classList.toggle('on',on));send({t:'jam',on});if(on)showMsg("  let's jam!",'  '+LB.mode[P.mode]+' running',800);}
-jamBtns.forEach(b=>b.addEventListener('click',()=>{if(!audioOn)ensureAudio();if(audioOn&&!powered){powered=true;unlock();setPowerUI();}setJam(!ui.jam);}));
+jamBtns.forEach(b=>b.addEventListener('click',()=>{if(ui.learn){learnPick('jam',null);return;}if(!audioOn)ensureAudio();if(audioOn&&!powered){powered=true;unlock();setPowerUI();}setJam(!ui.jam);}));
 
 /* audio */
 let node=null,starting=null,silentEl=null;
@@ -1201,6 +1222,40 @@ function onMidi(e){
  }
 }
 
+/* MIDI learn (plugin) */
+let ccMap=[];ui.learn=false;let learnEl=null;
+const learnBtn=document.getElementById('learnBtn'),learnMsg=document.getElementById('learnMsg'),maplist=document.getElementById('maplist');
+function hostId(id){
+ if(id==='mam'||id==='msr'||id==='mds')return 'm'+(ui.slot+1)+{mam:'a',msr:'s',mds:'d'}[id];
+ if(id==='vol'||id==='jam')return id;
+ if(PARAMS[id]&&!UIONLY.has(id)&&id in initPatch()&&typeof initPatch()[id]==='number')return id;
+ return null;
+}
+function hostName(h){const mm=/^m(\d+)([sda])$/.exec(h);if(mm)return 'mod '+mm[1]+' '+{s:'source',d:'destination',a:'amount'}[mm[2]];if(h==='jam')return 'jam';if(h==='vol')return 'volume';return PARAMS[h]?PARAMS[h].full:h;}
+function setLearn(on){ui.learn=on;learnBtn.classList.toggle('on',on);document.getElementById('app').classList.toggle('learning',on);if(learnEl){learnEl.classList.remove('learnsel');learnEl=null;}
+ if(!on){send({t:'learn',id:''});learnMsg.textContent='„learn“ antippen, dann einen Regler antippen und den Encoder bewegen.';}
+ else learnMsg.textContent='Jetzt einen Regler antippen …';}
+function learnPick(id,el){const h=hostId(id);if(!h){showMsg('not assignable',PARAMS[id]?PARAMS[id].full:id,1000);learnMsg.textContent='Dieser Parameter ist nicht zuweisbar.';return;}
+ if(learnEl)learnEl.classList.remove('learnsel');learnEl=el||null;if(el)el.classList.add('learnsel');
+ send({t:'learn',id:h});ui.learnId=h;learnMsg.textContent='„'+hostName(h)+'“: jetzt Encoder/Regler am Controller bewegen …';showMsg('learn',hostName(h),2000);}
+function buildMapList(){
+ if(!maplist)return;maplist.innerHTML='';const modes=['abs','rel64','rel2c','tgl'];
+ if(ui.learn&&ui.learnId&&ccMap.some(e=>e[1]===ui.learnId)){const e=ccMap.find(e=>e[1]===ui.learnId);showMsg('cc '+e[0]+' >',hostName(e[1]),1500);learnMsg.textContent='CC '+e[0]+' → '+hostName(e[1])+' zugewiesen. Nächsten Regler antippen oder learn beenden.';ui.learnId=null;if(learnEl){learnEl.classList.remove('learnsel');learnEl=null;}}
+ ccMap.slice().sort((a,b)=>a[0]-b[0]).forEach(([cc,id,mode])=>{
+  const c=document.createElement('span');c.className='cc';c.textContent='CC '+cc;
+  const n=document.createElement('span');n.textContent=hostName(id);
+  const s=document.createElement('select');modes.forEach((l,i)=>s.add(new Option(l,i)));s.value=mode;s.onchange=()=>send({t:'mapmode',cc,mode:+s.value});
+  const x=document.createElement('button');x.textContent='×';x.onclick=()=>send({t:'unmap',cc});
+  [c,n,s,x].forEach(z=>maplist.appendChild(z));});
+}
+if(PLUGIN){
+ document.getElementById('midiPanel').style.display='';
+ learnBtn.onclick=()=>setLearn(!ui.learn);
+ document.getElementById('mapReset').onclick=()=>send({t:'mapreset'});
+ document.getElementById('mapClear').onclick=()=>send({t:'mapclear'});
+ mrows.forEach((r,i)=>r.a.addEventListener('pointerdown',e=>{if(ui.learn){e.preventDefault();e.stopPropagation();ui.slot=i;learnPick('mam',null);}},true));
+}
+
 /* render loop */
 function frame(now){
  if(audioOn&&pluginReady){if(sysDirty)sendSys();if(patchDirty)sendPatch();}
@@ -1225,7 +1280,8 @@ if(PLUGIN){
    boardLabels();buildCats();buildList();buildMatrixValues();applyLcd();
    patchDirty=false;sysDirty=false;dirty=true;
    if(!pluginReady){pluginReady=true;const pi=progInfo(ui.cur);ui.tmpQ.push(['mutable','instruments',900],['shruthi xt','(plugin)',900],[pi.label+' '+P.name,'',800]);}
-  }else if(m.t==='params'){for(const k in m.v)P[k]=m.v[k];dirty=true;}
+  }else if(m.t==='params'){for(const k in m.v){const mm=/^m(\d+)([sda])$/.exec(k);if(mm)P.mtx[+mm[1]-1]['sda'.indexOf(mm[2])]=m.v[k];else P[k]=m.v[k];}dirty=true;}
+  else if(m.t==='map'){ccMap=m.list||[];buildMapList();}
   else if(m.t==='step')onEngine(m);
   else if(m.t==='jam'){ui.jam=!!m.on;jamBtns.forEach(b=>b.classList.toggle('on',ui.jam));}
   else if(m.t==='syxData'){const n=importSyx(new Uint8Array(m.bytes));showBmsg(n?n+' Patches importiert':'Keine Shruthi-Patches gefunden');buildCats();if(n)bcat.value='Import';buildList();}

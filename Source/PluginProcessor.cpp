@@ -15,6 +15,19 @@ ShruthiProcessor::ShruthiProcessor()
         paramPtr[(size_t) i] = apvts.getRawParameterValue (kParamInfo[i].id);
     volPtr = apvts.getRawParameterValue ("vol");
     jamPtr = apvts.getRawParameterValue ("jam");
+    for (int i = 0; i < 12; ++i)
+        for (int j = 0; j < 3; ++j)
+            mtxPtr[(size_t) i][(size_t) j] = apvts.getRawParameterValue ("m" + juce::String (i + 1) + "sda"[j]);
+    for (int i = 0; i < kNumParams; ++i) mappableIds.add (kParamInfo[i].id);
+    for (int i = 0; i < 12; ++i) for (int j = 0; j < 3; ++j) mappableIds.add ("m" + juce::String (i + 1) + "sda"[j]);
+    mappableIds.add ("vol"); mappableIds.add ("jam");
+    for (auto& id : mappableIds) mappable.push_back (apvts.getParameter (id));
+    for (int i = 0; i < 128; ++i) { ccParam[(size_t) i].store (-1); ccMode[(size_t) i].store (0); }
+    {
+        auto st = loadStore();
+        if (st.isObject() && st.hasProperty ("ccmap")) loadMapFromVar (st["ccmap"]);
+        else resetMap (true);
+    }
     Patch p; loadFactory (0, p, Patch());
     extra = p; setParamsFromPatch (p);
     pushPatchToAudio();
@@ -27,6 +40,14 @@ juce::AudioProcessorValueTreeState::ParameterLayout ShruthiProcessor::createLayo
     {
         const auto& in = kParamInfo[i];
         ps.push_back (std::make_unique<juce::AudioParameterInt> (juce::ParameterID { in.id, 1 }, in.id, in.min, in.max, in.def));
+    }
+    static const int initMtx[12][3] = {{0,6,0},{1,2,0},{1,3,0},{1,8,0},{2,8,0},{21,2,0},{21,3,0},{20,1,63},{21,1,16},{8,7,32},{0,7,0},{0,0,0}};
+    for (int i = 0; i < 12; ++i)
+    {
+        const juce::String n (i + 1);
+        ps.push_back (std::make_unique<juce::AudioParameterInt> (juce::ParameterID { "m" + n + "s", 1 }, "mod " + n + " source", 0, 31, initMtx[i][0]));
+        ps.push_back (std::make_unique<juce::AudioParameterInt> (juce::ParameterID { "m" + n + "d", 1 }, "mod " + n + " destination", 0, 26, initMtx[i][1]));
+        ps.push_back (std::make_unique<juce::AudioParameterInt> (juce::ParameterID { "m" + n + "a", 1 }, "mod " + n + " amount", -63, 63, initMtx[i][2]));
     }
     ps.push_back (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "vol", 1 }, "volume", 0.0f, 1.0f, 0.75f));
     ps.push_back (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "jam", 1 }, "jam", false));
@@ -65,6 +86,7 @@ void ShruthiProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mid
         if (tl.isLocked() && pending) { audioPatch = pendingPatch; engine->setSys (pendingSys); pending = false; }
     }
     for (int i = 0; i < kNumParams; ++i) audioPatch.v[i] = (int) std::lround (paramPtr[(size_t) i]->load());
+    for (int i = 0; i < 12; ++i) for (int j = 0; j < 3; ++j) audioPatch.mtx[i][j] = (int) std::lround (mtxPtr[(size_t) i][(size_t) j]->load());
     engine->setPatch (audioPatch);
     engine->setVolume (volPtr->load());
 
@@ -114,6 +136,17 @@ void ShruthiProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mid
         else if (msg.isController())
         {
             const int c = msg.getControllerNumber(); const float v = msg.getControllerValue() / 127.0f;
+            const int lt = learnTarget.load();
+            if (lt >= 0 && c != 0 && c != 32 && c < 120)
+            {
+                for (int k = 0; k < 128; ++k) if (ccParam[(size_t) k].load() == lt) ccParam[(size_t) k].store (-1);
+                ccParam[(size_t) c].store (lt);
+                const int val = msg.getControllerValue();
+                ccMode[(size_t) c].store (lt == (int) mappableIds.size() - 1 ? 3 : ((val == 1 || val == 127 || val == 63 || val == 65) ? 1 : 0));
+                learnTarget.store (-1); ++mapVersion;
+                continue;
+            }
+            if (ccParam[(size_t) c].load() >= 0) { applyCC (c, msg.getControllerValue()); continue; }
             if (c == 1) engine->setModWheel (v);
             else if (c == 2) engine->setCC (2, v);
             else if (c == 4) engine->setCC (3, v);
@@ -135,18 +168,31 @@ void ShruthiProcessor::setParamsFromPatch (const Patch& p)
             const float norm = prm->convertTo0to1 ((float) p.v[i]);
             if (std::abs (prm->getValue() - norm) > 1e-6f) prm->setValueNotifyingHost (norm);
         }
+    for (int i = 0; i < 12; ++i)
+        for (int j = 0; j < 3; ++j)
+            if (auto* prm = apvts.getParameter ("m" + juce::String (i + 1) + "sda"[j]))
+            {
+                const float norm = prm->convertTo0to1 ((float) p.mtx[i][j]);
+                if (std::abs (prm->getValue() - norm) > 1e-6f) prm->setValueNotifyingHost (norm);
+            }
 }
 
 Patch ShruthiProcessor::patchFromParams() const
 {
     Patch p = extra;
     for (int i = 0; i < kNumParams; ++i) p.v[i] = (int) std::lround (paramPtr[(size_t) i]->load());
+    for (int i = 0; i < 12; ++i) for (int j = 0; j < 3; ++j) p.mtx[i][j] = (int) std::lround (mtxPtr[(size_t) i][(size_t) j]->load());
     return p;
 }
 
 void ShruthiProcessor::readParamValues (int* out) const
 {
     for (int i = 0; i < kNumParams; ++i) out[i] = (int) std::lround (paramPtr[(size_t) i]->load());
+}
+
+void ShruthiProcessor::readMtxValues (int* out) const
+{
+    for (int i = 0; i < 12; ++i) for (int j = 0; j < 3; ++j) out[i * 3 + j] = (int) std::lround (mtxPtr[(size_t) i][(size_t) j]->load());
 }
 
 bool ShruthiProcessor::jamState() const { return jamPtr->load() > 0.5f; }
@@ -275,6 +321,7 @@ void ShruthiProcessor::getStateInformation (juce::MemoryBlock& dest)
     o->setProperty ("brd", sys.brd); o->setProperty ("oct", sys.oct); o->setProperty ("raga", sys.raga);
     o->setProperty ("tune", sys.tune); o->setProperty ("lofi", sys.lofi); o->setProperty ("chn", chn);
     o->setProperty ("lcdc", lcdc); o->setProperty ("sync", sync); o->setProperty ("cur", currentProgram);
+    o->setProperty ("ccmap", mapAsVar());
     ex->setAttribute ("json", juce::JSON::toString (juce::var (o), true));
     copyXmlToBinary (*xml, dest);
 }
@@ -292,6 +339,7 @@ void ShruthiProcessor::setStateInformation (const void* data, int size)
         sys.brd = (int) j["brd"]; sys.oct = (int) j["oct"]; sys.raga = (int) j["raga"]; sys.tune = (int) j["tune"];
         sys.lofi = (int) j["lofi"]; chn = (int) j["chn"]; lcdc = (int) j["lcdc"]; sync = j.hasProperty ("sync") ? (int) j["sync"] : 1;
         currentProgram = (int) j["cur"];
+        if (j.hasProperty ("ccmap")) loadMapFromVar (j["ccmap"]);
     }
     pushPatchToAudio();
     ++stateVersion;
@@ -310,7 +358,104 @@ juce::var ShruthiProcessor::loadStore()
 void ShruthiProcessor::saveStore (const juce::var& data)
 {
     auto f = storeFile(); f.getParentDirectory().createDirectory();
-    f.replaceWithText (juce::JSON::toString (data, true));
+    auto cur = loadStore();
+    auto* o = cur.isObject() ? cur.getDynamicObject() : new juce::DynamicObject();
+    juce::var keep (o);
+    if (auto* d = data.getDynamicObject())
+        for (auto& p : d->getProperties()) o->setProperty (p.name, p.value);
+    f.replaceWithText (juce::JSON::toString (keep, true));
+}
+
+/* ---------- MIDI CC mapping ---------- */
+void ShruthiProcessor::applyCC (int cc, int value)
+{
+    const int idx = ccParam[(size_t) cc].load();
+    if (idx < 0 || idx >= (int) mappable.size()) return;
+    auto* p = mappable[(size_t) idx]; if (! p) return;
+    const int mode = ccMode[(size_t) cc].load();
+    const auto& r = p->getNormalisableRange();
+    const bool isFloat = dynamic_cast<juce::AudioParameterFloat*> (p) != nullptr;
+    if (mode == 3) { if (value > 0) p->setValueNotifyingHost (p->getValue() > 0.5f ? 0.0f : 1.0f); return; }
+    if (mode == 0)
+    {
+        if (isFloat) { p->setValueNotifyingHost (value / 127.0f); return; }
+        const int span = (int) (r.end - r.start) + 1;
+        const float v = (float) r.start + (float) ((value * span) >> 7);
+        p->setValueNotifyingHost (p->convertTo0to1 (juce::jmin ((float) r.end, v)));
+        return;
+    }
+    int delta = mode == 1 ? value - 64 : (value < 64 ? value : value - 128);
+    if (isFloat) { p->setValueNotifyingHost (juce::jlimit (0.0f, 1.0f, p->getValue() + delta / 127.0f)); return; }
+    const float cur = std::round (p->convertFrom0to1 (p->getValue()));
+    p->setValueNotifyingHost (p->convertTo0to1 (juce::jlimit ((float) r.start, (float) r.end, cur + (float) delta)));
+}
+
+juce::var ShruthiProcessor::mapAsVar() const
+{
+    juce::Array<juce::var> list;
+    for (int c = 0; c < 128; ++c)
+    {
+        const int idx = ccParam[(size_t) c].load();
+        if (idx >= 0 && idx < mappableIds.size()) { juce::Array<juce::var> e; e.add (c); e.add (mappableIds[idx]); e.add (ccMode[(size_t) c].load()); list.add (e); }
+    }
+    return list;
+}
+
+void ShruthiProcessor::loadMapFromVar (const juce::var& v)
+{
+    if (! v.isArray()) return;
+    for (int i = 0; i < 128; ++i) { ccParam[(size_t) i].store (-1); ccMode[(size_t) i].store (0); }
+    for (auto& e : *v.getArray())
+        if (auto* a = e.getArray(); a && a->size() >= 3)
+        {
+            const int c = (int) (*a)[0], idx = mappableIds.indexOf ((*a)[1].toString());
+            if (c >= 0 && c < 128 && idx >= 0) { ccParam[(size_t) c].store (idx); ccMode[(size_t) c].store (juce::jlimit (0, 3, (int) (*a)[2])); }
+        }
+    ++mapVersion;
+}
+
+void ShruthiProcessor::saveMapGlobal()
+{
+    auto* o = new juce::DynamicObject(); o->setProperty ("ccmap", mapAsVar());
+    saveStore (juce::var (o));
+}
+
+void ShruthiProcessor::setLearn (const juce::String& id)
+{
+    learnTarget.store (id.isEmpty() ? -1 : mappableIds.indexOf (id));
+    ++mapVersion;
+}
+
+void ShruthiProcessor::unmap (int cc)
+{
+    if (cc >= 0 && cc < 128) ccParam[(size_t) cc].store (-1);
+    ++mapVersion; saveMapGlobal();
+}
+
+void ShruthiProcessor::setMapMode (int cc, int mode)
+{
+    if (cc >= 0 && cc < 128) ccMode[(size_t) cc].store (juce::jlimit (0, 3, mode));
+    ++mapVersion; saveMapGlobal();
+}
+
+void ShruthiProcessor::resetMap (bool shruthiDefaults)
+{
+    for (int i = 0; i < 128; ++i) { ccParam[(size_t) i].store (-1); ccMode[(size_t) i].store (0); }
+    if (shruthiDefaults)
+    {
+        // CC assignments of the Shruthi-1 firmware (parameter.cc)
+        static const std::pair<int, const char*> def[] = {
+            {20,"o1s"},{21,"o1p"},{22,"o1r"},{23,"sub"},{24,"o2s"},{25,"o2p"},{26,"o2r"},{27,"o2d"},
+            {28,"op"},{29,"bal"},{30,"subl"},{31,"nse"},{14,"cut"},{74,"cut"},{15,"res"},{71,"res"},
+            {102,"fenv"},{103,"flfo"},{104,"e1a"},{105,"e1d"},{106,"e1s"},{107,"e1r"},
+            {108,"e2a"},{73,"e2a"},{109,"e2d"},{110,"e2s"},{111,"e2r"},{72,"e2r"},
+            {112,"l1w"},{113,"l1r"},{114,"l1a"},{115,"l1m"},{116,"l2w"},{117,"l2r"},{118,"l2a"},{119,"l2m"},
+            {75,"mode"},{76,"grv"},{77,"gam"},{78,"adir"},{79,"arng"},{80,"apat"},{81,"div"},
+            {84,"port"},{5,"port"},{68,"lgt"},{12,"cut2"},{13,"res2"},{85,"fm1"},{86,"fm2"} };
+        for (auto& d : def) { const int idx = mappableIds.indexOf (d.second); if (idx >= 0) ccParam[(size_t) d.first].store (idx); }
+    }
+    ++mapVersion;
+    if (juce::MessageManager::getInstanceWithoutCreating() != nullptr) saveMapGlobal();
 }
 
 juce::AudioProcessorEditor* ShruthiProcessor::createEditor() { return new ShruthiEditor (*this); }
