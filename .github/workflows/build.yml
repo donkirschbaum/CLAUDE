@@ -1,0 +1,51 @@
+name: build
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  linux:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgl-dev libx11-dev libxext-dev libxrandr-dev libxcursor-dev libdbus-1-dev libjack-jackd2-dev
+      - name: Build
+        run: make -j4 && mkdir -p build && make test
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Anu-linux-x64
+          path: bin/
+
+  windows:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Dependencies
+        run: sudo apt-get update && sudo apt-get install -y mingw-w64
+      - name: Build
+        run: make -j4 windows
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Anu-windows-x64
+          path: bin/
+
+  macos:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build (universal x86_64 + arm64)
+        run: make -j4 macos
+      - name: Ad-hoc sign
+        run: |
+          codesign --force --deep -s - bin/Anu.vst3 || true
+          codesign --force --deep -s - bin/Anu.clap || true
+          codesign --force --deep -s - bin/Anu.component || true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Anu-macos-universal
+          path: bin/

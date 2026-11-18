@@ -1,0 +1,33 @@
+#ifndef DISTRHO_PLUGIN_INFO_H_INCLUDED
+#define DISTRHO_PLUGIN_INFO_H_INCLUDED
+
+#define DISTRHO_PLUGIN_BRAND   "Anu Project"
+#define DISTRHO_PLUGIN_NAME    "Anu"
+#define DISTRHO_PLUGIN_URI     "urn:anu-project:anu"
+#define DISTRHO_PLUGIN_CLAP_ID "org.anu-project.anu"
+
+#define DISTRHO_PLUGIN_BRAND_ID  AnuP
+#define DISTRHO_PLUGIN_UNIQUE_ID Anu1
+
+#define DISTRHO_PLUGIN_HAS_UI           1
+#define DISTRHO_PLUGIN_IS_RT_SAFE       1
+#define DISTRHO_PLUGIN_IS_SYNTH         1
+#define DISTRHO_PLUGIN_NUM_INPUTS       0
+#define DISTRHO_PLUGIN_NUM_OUTPUTS      2
+#define DISTRHO_PLUGIN_WANT_MIDI_INPUT  1
+#define DISTRHO_PLUGIN_WANT_MIDI_OUTPUT 1
+#define DISTRHO_PLUGIN_WANT_TIMEPOS     1
+#define DISTRHO_PLUGIN_WANT_STATE       1
+#define DISTRHO_PLUGIN_WANT_FULL_STATE  1
+#define DISTRHO_PLUGIN_WANT_PARAMETER_VALUE_CHANGE_REQUEST 1
+
+#define DISTRHO_UI_USE_NANOVG      1
+#define DISTRHO_UI_USER_RESIZABLE  1
+#define DISTRHO_UI_DEFAULT_WIDTH   1100
+#define DISTRHO_UI_DEFAULT_HEIGHT  640
+
+#define DISTRHO_PLUGIN_VST3_CATEGORIES   "Instrument|Synth|Drum"
+#define DISTRHO_PLUGIN_CLAP_FEATURES     "instrument", "synthesizer", "drum-machine", "mono", "stereo"
+#define DISTRHO_PLUGIN_LV2_CATEGORY      "lv2:InstrumentPlugin"
+
+#endif
