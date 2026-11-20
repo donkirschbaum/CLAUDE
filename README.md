@@ -26,3 +26,6 @@ Benötigt Xcode-Kommandozeilenwerkzeuge und CMake ≥ 3.22.
 
 ## Lizenz
 GPL v3.0 – siehe `LICENSE`. Werksdaten aus der Shruthi-1-Firmware von Émilie Gillet / Mutable Instruments.
+
+## Weitere Projekte in diesem Repo
+- [`fundstueck/`](fundstueck/) – **Fundstück**: Alltagsgeräusche zu Beats (VST3 / AU / Standalone). Installer unter Releases → „Fundstück …“.

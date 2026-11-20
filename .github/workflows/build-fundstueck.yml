@@ -1,0 +1,122 @@
+name: Build Fundstueck (macOS)
+
+on:
+  push:
+    paths:
+      - 'fundstueck/**'
+      - '!fundstueck/**.md'
+      - '.github/workflows/build-fundstueck.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+
+defaults:
+  run:
+    shell: bash
+    working-directory: fundstueck
+
+jobs:
+  mac:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Version
+        run: echo "VER=1.0.${{ github.run_number }}" >> "$GITHUB_ENV"
+
+      - name: Configure
+        run: |
+          cmake -B build -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0 2>&1 | tee build.log
+
+      - name: "Build (Universal: Apple Silicon + Intel)"
+        run: cmake --build build --config Release -j 4 2>&1 | tee -a build.log
+
+      - name: Sign (ad-hoc) and package
+        run: |
+          set -e
+          A=build/Fundstueck_artefacts/Release
+          ls -R "$A" | head -50
+          for b in "$A/VST3/Fundstueck.vst3" "$A/AU/Fundstueck.component" "$A/Standalone/Fundstueck.app"; do
+            codesign --force --deep --sign - "$b"
+          done
+
+          # Installer (.pkg) - installierte Dateien bekommen kein Quarantaene-Flag
+          mkdir -p pkgroot/Library/Audio/Plug-Ins/VST3 pkgroot/Library/Audio/Plug-Ins/Components pkgroot/Applications
+          cp -R "$A/VST3/Fundstueck.vst3" pkgroot/Library/Audio/Plug-Ins/VST3/
+          cp -R "$A/AU/Fundstueck.component" pkgroot/Library/Audio/Plug-Ins/Components/
+          cp -R "$A/Standalone/Fundstueck.app" pkgroot/Applications/
+          pkgbuild --analyze --root pkgroot components.plist
+          i=0
+          while /usr/libexec/PlistBuddy -c "Print :$i" components.plist >/dev/null 2>&1; do
+            /usr/libexec/PlistBuddy -c "Set :$i:BundleIsRelocatable false" components.plist
+            i=$((i+1))
+          done
+          mkdir -p scripts
+          printf '#!/bin/sh\nkillall -9 AudioComponentRegistrar 2>/dev/null || true\nexit 0\n' > scripts/postinstall
+          chmod +x scripts/postinstall
+          pkgbuild --root pkgroot --component-plist components.plist --scripts scripts \
+            --identifier com.donkirschbaum.fundstueck --version "$VER" --install-location / \
+            "Fundstueck-$VER-macOS.pkg"
+
+          # ZIP fuer manuelle Installation
+          mkdir -p zip/Fundstueck
+          cp -R "$A/VST3/Fundstueck.vst3" "$A/AU/Fundstueck.component" "$A/Standalone/Fundstueck.app" zip/Fundstueck/
+          (cd zip && ditto -c -k --keepParent Fundstueck "../Fundstueck-$VER-macOS.zip")
+          ls -la *.pkg *.zip
+
+      - name: Validate Audio Unit (auval)
+        continue-on-error: true
+        run: |
+          mkdir -p ~/Library/Audio/Plug-Ins/Components
+          cp -R build/Fundstueck_artefacts/Release/AU/Fundstueck.component ~/Library/Audio/Plug-Ins/Components/
+          killall -9 AudioComponentRegistrar || true
+          sleep 2
+          auval -v aumu Fst1 Fdsk 2>&1 | tail -25
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: Fundstueck-macOS
+          path: |
+            fundstueck/Fundstueck-*-macOS.pkg
+            fundstueck/Fundstueck-*-macOS.zip
+
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: fundstueck-v${{ env.VER }}
+          name: Fundstück ${{ env.VER }}
+          target_commitish: ${{ github.sha }}
+          make_latest: false
+          files: |
+            fundstueck/Fundstueck-*-macOS.pkg
+            fundstueck/Fundstueck-*-macOS.zip
+          body: |
+            **Installieren:** `Fundstueck-${{ env.VER }}-macOS.pkg` herunterladen → Rechtsklick → **Öffnen** → durchklicken.
+            Installiert VST3, Audio Unit (Logic, GarageBand) und die eigenständige App *Fundstueck* in „Programme“.
+
+            Falls macOS „kann nicht geöffnet werden“ meldet: Systemeinstellungen → Datenschutz & Sicherheit → „Dennoch öffnen“.
+            Universal Binary (Apple Silicon + Intel), macOS 11 oder neuer.
+
+      - name: Report failure as issue
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          {
+            echo "Build für Commit ${{ github.sha }} fehlgeschlagen: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            echo
+            echo '### Fehlerzeilen'
+            echo '```'
+            grep -E "error|Error|FAILED" build.log 2>/dev/null | head -60 || true
+            echo '```'
+            echo '### Log-Ende'
+            echo '```'
+            tail -n 80 build.log || true
+            echo '```'
+          } > report.md
+          gh issue create --repo "${{ github.repository }}" --title "Build fehlgeschlagen (Run ${{ github.run_number }})" --body-file report.md
