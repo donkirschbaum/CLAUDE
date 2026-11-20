@@ -79,7 +79,7 @@ jobs:
           path: Anu-macOS-universal.zip
 
   release:
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: github.event_name != 'pull_request'
     needs: [linux, windows, macos]
     runs-on: ubuntu-22.04
     steps:
@@ -90,7 +90,10 @@ jobs:
       - run: ls -la dist
       - uses: softprops/action-gh-release@v2
         with:
-          name: Anu ${{ github.ref_name }}
+          tag_name: v1.0.0
+          target_commitish: ${{ github.sha }}
+          name: Anu 1.0.0
+          make_latest: true
           body: |
             **Anu** – Emulation des Mutable Instruments Anushri (Monosynth + generative Drum Machine).
 
