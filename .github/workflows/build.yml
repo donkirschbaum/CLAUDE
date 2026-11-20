@@ -3,7 +3,7 @@ name: Build
 on:
   push:
     branches: ["**"]
-    tags: ["v*"]
+    tags: ["shaker-lab-v*"]
   pull_request:
   workflow_dispatch:
 
@@ -56,20 +56,20 @@ jobs:
           path: ShakerLab-macOS.zip
 
       - name: Publish GitHub release
-        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/shaker-lab' || startsWith(github.ref, 'refs/tags/shaker-lab-v'))
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+          if [[ "${GITHUB_REF}" == refs/tags/shaker-lab-v* ]]; then
             TAG="${GITHUB_REF_NAME}"
           else
-            TAG="v1.0.${GITHUB_RUN_NUMBER}"
+            TAG="shaker-lab-v1.0.${GITHUB_RUN_NUMBER}"
           fi
           gh release create "${TAG}" ShakerLab-macOS.zip \
             --repo "${GITHUB_REPOSITORY}" \
             --target "${GITHUB_SHA}" \
-            --latest \
-            --title "Shaker Lab ${TAG}" \
+            --latest=false \
+            --title "Shaker Lab ${TAG#shaker-lab-}" \
             --notes "Fertiges Plugin für macOS (Universal: Apple Silicon + Intel): VST3, AU und Standalone-App. ZIP entpacken, Installieren.command per Rechtsklick → Öffnen starten, Ableton neu starten. Details im README."
 
   linux:

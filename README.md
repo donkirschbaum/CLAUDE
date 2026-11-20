@@ -4,7 +4,7 @@
 
 ## Download & Installation (Mac)
 
-1. Unter **Releases** (rechts auf der Repo-Seite) die neueste `ShakerLab-macOS.zip` herunterladen und entpacken.
+1. Unter **Releases** die neueste „Shaker Lab“-Version öffnen, `ShakerLab-macOS.zip` herunterladen und entpacken.
 2. **Rechtsklick auf `Installieren.command` → Öffnen** (beim ersten Mal fragt macOS nach, weil das Skript nicht von einem registrierten Apple-Entwickler stammt → „Öffnen“ bestätigen).
    Das Skript kopiert die Plugins nach `~/Library/Audio/Plug-Ins/VST3` und `~/Library/Audio/Plug-Ins/Components` und entfernt die Download-Quarantäne.
 3. Ableton neu starten. Das Plugin heißt **Shaker Lab** und liegt unter *Plug-Ins → Don Kirschbaum*.
@@ -31,4 +31,4 @@ cmake -B build -G Xcode -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
 cmake --build build --config Release --target ShakerLab_VST3 ShakerLab_AU ShakerLab_Standalone
 ```
 
-JUCE wird automatisch geladen (oder `-DJUCE_DIR=/pfad/zu/JUCE`). Jeder Push auf `main` baut über GitHub Actions ein neues Release.
+JUCE wird automatisch geladen (oder `-DJUCE_DIR=/pfad/zu/JUCE`). Jeder Push auf den Branch `shaker-lab` baut über GitHub Actions ein neues Release.
