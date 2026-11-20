@@ -29,8 +29,18 @@ SLOTS IN DEN DRUM RACK ZIEHEN
 
 LIVE-MIDI AUS DEM PLUGIN
 - Neue MIDI-Spur anlegen, "MIDI From" = Spur mit Grids 8, darunter
-  "Grids 8" wählen, Monitor "In". Unter MIDI & Optionen lässt sich
-  "Interne Sounds" abschalten, dann ist Grids 8 ein reiner MIDI-Generator.
+  "Grids 8" wählen, Monitor "In". Grids 8 ist ein MIDI-Generator: die
+  eingebauten Sounds sind aus und lassen sich mit dem Knopf "SOUND" oben
+  rechts zum Vorhören einschalten.
+
+SPUREN & MODULATION
+- Doppelklick auf einen Spurnamen (Kick, Clap ...) benennt ihn um.
+- Die Sektion SEQUENCER (Spur 1–8) lässt sich mit [-] einklappen.
+- MASTER und DREHUNG je Spur: wie stark (auch gespiegelt) und in welche
+  Richtung die Spur dem Master-XY folgt.
+- MOD je Spur: LFO oder Hüllkurve auf X/Y/Dichte. "Env Zyklus" läuft im
+  gewählten Takt-Raster, "Env Master" startet, sobald du das Master-XY
+  bewegst. VERSATZ verschiebt die Phase bzw. verzögert die Hüllkurve.
 
 SYNC
 - Grids 8 folgt automatisch Tempo, Start/Stop und Songposition von Ableton.

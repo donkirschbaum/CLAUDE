@@ -141,6 +141,8 @@ struct PatternMap
 
 // Modulation: 0 Aus, 1 Sinus, 2 Dreieck, 3 Saege, 4 S&H, 5 Drift
 inline const char* const SHAPE_NAMES[6] = { "Aus", "Sinus", "Dreieck", "Saegezahn", "S&H", "Drift" };
+// Spur-Modulation: zusaetzlich Huellkurven (6 = pro Zyklus, 7 = ausgeloest durch Master-XY-Bewegung)
+inline const char* const TRACK_SHAPES[8] = { "Aus", "LFO Sinus", "LFO Dreieck", "LFO Saege", "LFO S&H", "LFO Drift", "Env Zyklus", "Env Master" };
 inline const float RATE_BARS[7] = { .25f, .5f, 1.f, 2.f, 4.f, 8.f, 16.f };
 inline const char* const RATE_NAMES[7] = { "1/4 Takt", "1/2 Takt", "1 Takt", "2 Takte", "4 Takte", "8 Takte", "16 Takte" };
 

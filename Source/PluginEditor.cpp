@@ -5,6 +5,12 @@ namespace g8
 juce::Font fnt (float h, bool bold) { return juce::Font (juce::FontOptions (h, bold ? juce::Font::bold : juce::Font::plain)); }
 
 static juce::String pct (double v) { return juce::String (juce::roundToInt (v * 100)); }
+static juce::String up (const juce::String& t)
+{
+    return t.toUpperCase().replace (juce::String::fromUTF8 ("ä"), juce::String::fromUTF8 ("Ä"))
+                          .replace (juce::String::fromUTF8 ("ö"), juce::String::fromUTF8 ("Ö"))
+                          .replace (juce::String::fromUTF8 ("ü"), juce::String::fromUTF8 ("Ü"));
+}
 
 // ======================= LookAndFeel =======================
 LnF::LnF()
@@ -46,7 +52,7 @@ void LnF::drawButtonText (juce::Graphics& g, juce::TextButton& b, bool, bool)
     if (b.getProperties().contains ("onText") && on) tc = juce::Colour ((juce::uint32) (juce::int64) b.getProperties()["onText"]);
     g.setColour (tc);
     g.setFont (fnt (juce::jmin (13.f, b.getHeight() * .55f), true));
-    g.drawFittedText (b.getButtonText().toUpperCase(), b.getLocalBounds().reduced (3, 0), juce::Justification::centred, 1);
+    g.drawFittedText (up (b.getButtonText()), b.getLocalBounds().reduced (3, 0), juce::Justification::centred, 1);
 }
 
 void LnF::drawComboBox (juce::Graphics& g, int w, int h, bool, int, int, int, int, juce::ComboBox&)
@@ -83,7 +89,7 @@ void LnF::drawToggleButton (juce::Graphics& g, juce::ToggleButton& b, bool, bool
 static void label (juce::Graphics& g, const juce::String& t, juce::Rectangle<int> r, juce::Justification j = juce::Justification::centredLeft)
 {
     g.setColour (col::ink2); g.setFont (fnt (11.f, true));
-    g.drawText (t.toUpperCase(), r, j);
+    g.drawText (up (t), r, j);
 }
 
 static void fillCombo (juce::ComboBox& c, const char* const* items, int n) { for (int i = 0; i < n; ++i) c.addItem (items[i], i + 1); }
@@ -184,7 +190,7 @@ void LabeledSlider::paint (juce::Graphics& g)
 {
     auto r = getLocalBounds().removeFromTop (13);
     g.setColour (col::ink2); g.setFont (fnt (10.5f, true));
-    g.drawText (label.toUpperCase(), r, juce::Justification::centredLeft);
+    g.drawText (up (label), r, juce::Justification::centredLeft);
     g.setColour (col::ink); g.setFont (fnt (11.f));
     g.drawText (fmt (slider.getValue()), r, juce::Justification::centredRight);
 }
@@ -197,22 +203,36 @@ TrackRow::TrackRow (Grids8Processor& p, int t)
       dens (p.apvts, Grids8Processor::tid (t, "dens"), "Dichte", pct),
       chaos (p.apvts, Grids8Processor::tid (t, "chaos"), "Chaos", pct),
       len (p.apvts, Grids8Processor::tid (t, "len"), juce::String::fromUTF8 ("Länge"), [] (double v) { return juce::String ((int) v); }),
+      amt (p.apvts, Grids8Processor::tid (t, "mAmt"), "Master", [] (double v) { return pct (v) + "%"; }),
+      rot (p.apvts, Grids8Processor::tid (t, "mRot"), "Drehung", [] (double v) { return juce::String (juce::roundToInt (v)) + juce::String::fromUTF8 ("°"); }),
       vol (p.apvts, Grids8Processor::tid (t, "vol"), "Vol", pct),
       pitch (p.apvts, Grids8Processor::tid (t, "pitch"), "Pitch", [] (double v) { int i = (int) std::lround (v); return (i > 0 ? "+" : "") + juce::String (i); }),
       decay (p.apvts, Grids8Processor::tid (t, "decay"), "Decay", pct),
       mdx (p.apvts, Grids8Processor::tid (t, "mDx"), "Tiefe X", pct),
       mdy (p.apvts, Grids8Processor::tid (t, "mDy"), "Tiefe Y", pct),
       mdd (p.apvts, Grids8Processor::tid (t, "mDd"), "Tiefe D", pct),
+      phase (p.apvts, Grids8Processor::tid (t, "mPhase"), "Versatz", pct),
+      atk (p.apvts, Grids8Processor::tid (t, "mAtk"), "Env Attack", [] (double v) { return juce::String ((int) v) + " St"; }),
+      dec (p.apvts, Grids8Processor::tid (t, "mDec"), "Env Decay", [] (double v) { return juce::String ((int) v) + " St"; }),
       steps (p, t)
 {
-    for (auto* c : std::initializer_list<juce::Component*> { &fileBtn, &mute, &solo, &dice, &pad, &dens, &chaos, &len, &vol, &pitch, &decay, &mdx, &mdy, &mdd, &steps, &shape, &rate })
+    for (auto* c : std::initializer_list<juce::Component*> { &nameLabel, &fileBtn, &mute, &solo, &dice, &pad, &dens, &chaos, &len, &amt, &rot, &vol, &pitch, &decay,
+                                                             &mdx, &mdy, &mdd, &phase, &atk, &dec, &steps, &shape, &rate })
         addAndMakeVisible (c);
+    nameLabel.setText (p.getTrackName (t), juce::dontSendNotification);
+    nameLabel.setFont (fnt (18.f, true));
+    nameLabel.setColour (juce::Label::textColourId, col::ink);
+    nameLabel.setColour (juce::Label::backgroundWhenEditingColourId, juce::Colours::white);
+    nameLabel.setColour (juce::Label::outlineWhenEditingColourId, col::led);
+    nameLabel.setEditable (false, true, false);
+    nameLabel.setTooltip (juce::String::fromUTF8 ("Doppelklick zum Umbenennen"));
+    nameLabel.onTextChange = [this] { proc.setTrackName (track, nameLabel.getText()); nameLabel.setText (proc.getTrackName (track), juce::dontSendNotification); };
     mute.setClickingTogglesState (true); solo.setClickingTogglesState (true);
     mute.getProperties().set ("onColour", (juce::int64) col::ink2.getARGB());
     solo.getProperties().set ("onColour", (juce::int64) col::solo.getARGB()); solo.getProperties().set ("onText", (juce::int64) col::ink.getARGB());
     aMute = std::make_unique<APVTS::ButtonAttachment> (p.apvts, Grids8Processor::tid (t, "mute"), mute);
     aSolo = std::make_unique<APVTS::ButtonAttachment> (p.apvts, Grids8Processor::tid (t, "solo"), solo);
-    fillCombo (shape, SHAPE_NAMES, 6); fillCombo (rate, RATE_NAMES, 7);
+    fillCombo (shape, TRACK_SHAPES, 8); fillCombo (rate, RATE_NAMES, 7);
     aShape = std::make_unique<APVTS::ComboBoxAttachment> (p.apvts, Grids8Processor::tid (t, "mShape"), shape);
     aRate = std::make_unique<APVTS::ComboBoxAttachment> (p.apvts, Grids8Processor::tid (t, "mRate"), rate);
     dice.setButtonText (juce::String::fromUTF8 ("Würfel"));
@@ -227,6 +247,20 @@ TrackRow::TrackRow (Grids8Processor& p, int t)
             if (f.existsAsFile() && proc.loadUserSample (track, f)) fileBtn.setButtonText (proc.sampleName (track));
         });
     };
+    updateModVisibility();
+}
+
+void TrackRow::updateModVisibility()
+{
+    const int sh = (int) proc.pv (Grids8Processor::tid (track, "mShape"));
+    if (sh == lastShape) return;
+    lastShape = sh;
+    const bool env = sh >= 6;
+    atk.setEnabled (env); dec.setEnabled (env);
+    atk.setAlpha (env ? 1.f : .35f); dec.setAlpha (env ? 1.f : .35f);
+    for (juce::Component* c : { (juce::Component*) &rate, (juce::Component*) &phase, (juce::Component*) &mdx, (juce::Component*) &mdy, (juce::Component*) &mdd })
+        c->setAlpha (sh == 0 ? .35f : 1.f);
+    rate.setAlpha (sh == 7 ? .35f : (sh == 0 ? .35f : 1.f));
 }
 
 void TrackRow::paint (juce::Graphics& g)
@@ -234,34 +268,36 @@ void TrackRow::paint (juce::Graphics& g)
     auto r = getLocalBounds().toFloat().reduced (.75f);
     g.setColour (juce::Colours::white.withAlpha (.18f)); g.fillRoundedRectangle (r, 6.f);
     g.setColour (col::ink); g.drawRoundedRectangle (r, 6.f, 1.5f);
-    juce::Rectangle<float> idx (10, 8, 22, 22);
+    juce::Rectangle<float> idx (10, 9, 22, 22);
     g.setColour (flash > .3f ? col::led : col::ink); g.fillRoundedRectangle (idx, 3.f);
     g.setColour (juce::Colours::white); g.setFont (fnt (12.f, true));
     g.drawText (juce::String (track + 1), idx, juce::Justification::centred);
-    g.setColour (col::ink); g.setFont (fnt (18.f, true));
-    g.drawText (juce::String (TRACKS[track].name).toUpperCase(), 38, 6, 96, 26, juce::Justification::centredLeft);
-    label (g, "Mod", { modX, 9, 34, 14 });
+    label (g, "Mod", { modX, 10, 34, 14 });
 }
 
 void TrackRow::resized()
 {
-    // Spalten: Name 136 | Pad 72 | Regler 240 | Steps flex | Mod 220 | Wuerfel 44
+    // Spalten: Name 140 | Pad | 4 Regler x 2 Reihen | Steps (flex) | Modulation 3 Reihen | Würfel
     const int H = getHeight();
-    fileBtn.setBounds (10, 34, 120, 18);
-    mute.setBounds (10, 56, 34, 20); solo.setBounds (48, 56, 34, 20);
-    pad.setBounds (144, 4, H - 8, H - 8);
-    const int kx = 144 + H - 8 + 10, kw = 76;
-    LabeledSlider* ks[] = { &dens, &chaos, &len, &vol, &pitch, &decay };
-    for (int i = 0; i < 6; ++i) ks[i]->setBounds (kx + (i % 3) * (kw + 6), 6 + (i / 3) * 34, kw, 30);
-    const int sx = kx + 3 * (kw + 6) + 4;
-    const int modW = 230, diceW = 64;
-    const int sw = getWidth() - sx - modW - diceW - 20;
+    nameLabel.setBounds (34, 6, 106, 26);
+    fileBtn.setBounds (10, 38, 128, 18);
+    mute.setBounds (10, 62, 40, 22); solo.setBounds (54, 62, 40, 22);
+    const int ps = H - 12;
+    pad.setBounds (146, 6, ps, ps);
+    const int kx = 146 + ps + 10, kw = 64;
+    LabeledSlider* ks[] = { &dens, &chaos, &len, &amt, &vol, &pitch, &decay, &rot };
+    for (int i = 0; i < 8; ++i) ks[i]->setBounds (kx + (i % 4) * (kw + 6), 8 + (i / 4) * 44, kw, 32);
+    const int sx = kx + 4 * (kw + 6) + 4;
+    const int modW = 300, diceW = 60;
+    const int sw = getWidth() - sx - modW - diceW - 22;
     steps.setBounds (sx, 8, sw, H - 16);
     const int mx = sx + sw + 10;
     modX = mx;
-    shape.setBounds (mx + 34, 6, 92, 20); rate.setBounds (mx + 132, 6, 92, 20);
-    mdx.setBounds (mx, 38, 70, 30); mdy.setBounds (mx + 77, 38, 70, 30); mdd.setBounds (mx + 154, 38, 70, 30);
-    dice.setBounds (getWidth() - diceW - 8, H / 2 - 14, diceW, 28);
+    shape.setBounds (mx + 34, 6, 120, 22); rate.setBounds (mx + 160, 6, 90, 22);
+    const int cw = (modW - 12) / 3;
+    mdx.setBounds (mx, 34, cw, 30); mdy.setBounds (mx + cw + 6, 34, cw, 30); mdd.setBounds (mx + 2 * (cw + 6), 34, cw, 30);
+    phase.setBounds (mx, 68, cw, 30); atk.setBounds (mx + cw + 6, 68, cw, 30); dec.setBounds (mx + 2 * (cw + 6), 68, cw, 30);
+    dice.setBounds (getWidth() - diceW - 8, H / 2 - 15, diceW, 30);
 }
 
 void TrackRow::tick (int64_t g)
@@ -273,8 +309,10 @@ void TrackRow::tick (int64_t g)
     pad.hot = flash > .5f;
     flash *= .82f;
     steps.step = g;
-    pad.repaint(); steps.repaint(); repaint (juce::Rectangle<int> (8, 6, 26, 26));
+    pad.repaint(); steps.repaint(); repaint (juce::Rectangle<int> (8, 7, 26, 26));
     if (fileBtn.getButtonText() != proc.sampleName (track)) fileBtn.setButtonText (proc.sampleName (track));
+    if (! nameLabel.isBeingEdited() && nameLabel.getText() != proc.getTrackName (track)) nameLabel.setText (proc.getTrackName (track), juce::dontSendNotification);
+    updateModVisibility();
 }
 
 // ======================= Sections =======================
@@ -284,7 +322,7 @@ void Section::paint (juce::Graphics& g)
     g.setColour (juce::Colours::white.withAlpha (.18f)); g.fillRoundedRectangle (r, 6.f);
     g.setColour (col::ink); g.drawRoundedRectangle (r, 6.f, 1.5f);
     g.setFont (fnt (15.f, true));
-    g.drawText (title.toUpperCase(), 40, 6, getWidth() - 50, 22, juce::Justification::centredLeft);
+    g.drawText (up (title), 40, 6, getWidth() - 50, 22, juce::Justification::centredLeft);
 }
 void Section::resized()
 {
@@ -319,7 +357,8 @@ RandomSection::RandomSection (Grids8Processor& p)
 {
     const char* names[][2] = { { "Alles würfeln", "all" }, { "Mutieren", "mutate" }, { "Neue Map", "map" }, { "XY würfeln", "xy" },
                                { "Dichten", "dens" }, { "Chaos", "chaos" }, { "Mutes", "mutes" }, { "Sound", "sound" },
-                               { "Modulation", "mods" }, { "XY-Glide", "glide" }, { "Längen", "len" }, { "Tempo/Swing", "tempo" } };
+                               { "Modulation", "mods" }, { "XY-Glide", "glide" }, { "Längen", "len" }, { "Tempo/Swing", "tempo" },
+                               { "Master-Reaktion", "react" }, { "Versatz", "phase" } };
     for (auto& n : names)
     {
         auto* b = buttons.add (new juce::TextButton (juce::String::fromUTF8 (n[0])));
@@ -333,7 +372,7 @@ RandomSection::RandomSection (Grids8Processor& p)
     aAf = std::make_unique<APVTS::ButtonAttachment> (p.apvts, "afOn", afOn);
     aEvE = std::make_unique<APVTS::ComboBoxAttachment> (p.apvts, "evEvery", evEvery);
     aAfE = std::make_unique<APVTS::ComboBoxAttachment> (p.apvts, "afEvery", afEvery);
-    contentHeight = 6 * 30 + 6 + 3 * 32 + 2 * 28 + 20;
+    contentHeight = 7 * 30 + 6 + 3 * 32 + 2 * 28 + 20;
 }
 void RandomSection::layoutContent (juce::Rectangle<int> r)
 {
@@ -356,18 +395,17 @@ void RandomSection::paint (juce::Graphics& g)
 
 OptionsSection::OptionsSection (Grids8Processor& p) : Section ("MIDI & Optionen")
 {
-    for (auto* c : std::initializer_list<juce::Component*> { &noteMap, &midiCh, &choke, &sound }) addAndMakeVisible (c);
+    for (auto* c : std::initializer_list<juce::Component*> { &noteMap, &midiCh, &choke }) addAndMakeVisible (c);
     fillCombo (noteMap, { juce::String::fromUTF8 ("Drum Rack C1–G1 (36–43)"), "General MIDI" });
     fillCombo (midiCh, { "MIDI-Out Kanal 10", juce::String::fromUTF8 ("MIDI-Out Kanal 1–8 je Spur") });
     aNote = std::make_unique<APVTS::ComboBoxAttachment> (p.apvts, "noteMap", noteMap);
     aCh = std::make_unique<APVTS::ComboBoxAttachment> (p.apvts, "midiCh", midiCh);
     aChoke = std::make_unique<APVTS::ButtonAttachment> (p.apvts, "choke", choke);
-    aSound = std::make_unique<APVTS::ButtonAttachment> (p.apvts, "sound", sound);
-    contentHeight = 4 * 28 + 120;
+    contentHeight = 3 * 28 + 120;
 }
 void OptionsSection::layoutContent (juce::Rectangle<int> r)
 {
-    for (juce::Component* c : { (juce::Component*) &noteMap, (juce::Component*) &midiCh, (juce::Component*) &choke, (juce::Component*) &sound })
+    for (juce::Component* c : { (juce::Component*) &noteMap, (juce::Component*) &midiCh, (juce::Component*) &choke })
         c->setBounds (r.removeFromTop (28).withTrimmedBottom (4));
     infoArea = r;
 }
@@ -376,7 +414,7 @@ void OptionsSection::paint (juce::Graphics& g)
     Section::paint (g);
     if (collapsed) return;
     g.setColour (col::ink2); g.setFont (fnt (12.f));
-    g.drawFittedText (juce::String::fromUTF8 ("Slots: Chip „Drum Rack ziehen“ auf eine MIDI-Spur mit Drum Rack ziehen. Live-MIDI: neue MIDI-Spur, „MIDI From“ = Grids-8-Spur. "
+    g.drawFittedText (juce::String::fromUTF8 ("Grids 8 ist ein MIDI-Generator: Sound im Kopf nur zum Vorhören. Slots: Chip „Drum Rack ziehen“ auf eine MIDI-Spur mit Drum Rack ziehen. Live-MIDI: neue MIDI-Spur, „MIDI From“ = Grids-8-Spur. "
                       "CC: Master X/Y 16/17, Spur X 20–27, Y 30–37, Dichte 40–47."),
                       infoArea, juce::Justification::topLeft, 8);
 }
@@ -412,7 +450,7 @@ void DragChip::paint (juce::Graphics& g)
     auto r = getLocalBounds().toFloat().reduced (.75f);
     g.setColour (enabledChip ? col::ink : col::panel2); g.fillRoundedRectangle (r, 3.f);
     g.setColour (enabledChip ? juce::Colours::white : col::ink2); g.setFont (fnt (11.5f, true));
-    g.drawFittedText (text.toUpperCase(), getLocalBounds().reduced (4, 0), juce::Justification::centred, 1);
+    g.drawFittedText (up (text), getLocalBounds().reduced (4, 0), juce::Justification::centred, 1);
 }
 void DragChip::mouseDrag (const juce::MouseEvent& e)
 {
@@ -507,7 +545,18 @@ Content::Content (Grids8Processor& p)
       swing (p.apvts, "swing", "Swing", [] (double v) { return juce::String (juce::roundToInt (v)) + "%"; }),
       left (p)
 {
-    for (auto* c : std::initializer_list<juce::Component*> { &play, &fill, &holdAll, &bpm, &swing, &leftView }) addAndMakeVisible (c);
+    for (auto* c : std::initializer_list<juce::Component*> { &play, &fill, &holdAll, &bpm, &swing, &leftView, &soundBtn, &seqToggle }) addAndMakeVisible (c);
+    soundBtn.setClickingTogglesState (true);
+    soundBtn.getProperties().set ("onColour", (juce::int64) col::led.getARGB());
+    aSound = std::make_unique<APVTS::ButtonAttachment> (p.apvts, "sound", soundBtn);
+    seqToggle.setButtonText (p.seqCollapsed ? "+" : "-");
+    seqToggle.onClick = [this]
+    {
+        proc.seqCollapsed = ! proc.seqCollapsed;
+        seqToggle.setButtonText (proc.seqCollapsed ? "+" : "-");
+        for (auto* r : rows) r->setVisible (! proc.seqCollapsed);
+        if (onHeightChange) onHeightChange();
+    };
     leftView.setViewedComponent (&left, false);
     leftView.setScrollBarsShown (true, false);
     leftView.setScrollBarThickness (8);
@@ -515,7 +564,7 @@ Content::Content (Grids8Processor& p)
     play.onClick = [this] { proc.internalPlay = ! proc.internalPlay.load(); };
     fill.onStateChange = [this] { proc.fillHeld = fill.isDown(); fill.setToggleState (fill.isDown(), juce::dontSendNotification); };
     holdAll.onClick = [this] { proc.holdAll(); };
-    for (int t = 0; t < NT; ++t) addAndMakeVisible (rows.add (new TrackRow (p, t)));
+    for (int t = 0; t < NT; ++t) { addAndMakeVisible (rows.add (new TrackRow (p, t))); rows.getLast()->setVisible (! p.seqCollapsed); }
     for (int i = 0; i < 8; ++i) addAndMakeVisible (slotViews.add (new SlotView (p, i)));
     left.master.pad.onUserMove = [] {};
 }
@@ -523,6 +572,7 @@ Content::Content (Grids8Processor& p)
 void Content::paint (juce::Graphics& g)
 {
     g.fillAll (col::panel);
+    const int H = getHeight();
     g.setColour (juce::Colours::white.withAlpha (.08f));
     for (int x = 0; x < W; x += 3) g.drawVerticalLine (x, 0, (float) H);
     g.setColour (col::ink); g.setFont (fnt (30.f, true));
@@ -536,9 +586,15 @@ void Content::paint (juce::Graphics& g)
     g.setColour (col::ink); g.drawEllipse (842, 24, 10, 10, 1.3f);
     g.setFont (fnt (12.f)); g.drawText (capText, 860, 18, 300, 22, juce::Justification::centredLeft);
     g.setFont (fnt (18.f, true));
-    g.drawText ("SPEICHER", 330, 746, 140, 22, juce::Justification::centredLeft);
+    g.drawText ("SEQUENCER", 364, SEQ_Y + 2, 160, 24, juce::Justification::centredLeft);
     g.setColour (col::ink2); g.setFont (fnt (12.f));
-    g.drawText (juce::String::fromUTF8 ("Alle Slots nehmen beim Spielen automatisch die letzten 1–16 Takte auf. „Halten“ friert ein, Chip in Ableton ziehen."), 470, 746, 900, 22, juce::Justification::centredLeft);
+    g.drawText (proc.seqCollapsed ? juce::String::fromUTF8 ("Spur 1–8 eingeklappt") : juce::String::fromUTF8 ("Doppelklick auf einen Namen zum Umbenennen · Mod: LFO oder Hüllkurve, Versatz = Phase/Verzögerung · Master % und Drehung: wie die Spur dem Master-XY folgt"),
+                520, SEQ_Y + 2, W - 540, 24, juce::Justification::centredLeft);
+    const int sy = slotsY() - 26;
+    g.setColour (col::ink); g.setFont (fnt (18.f, true));
+    g.drawText ("SPEICHER", 330, sy, 140, 22, juce::Justification::centredLeft);
+    g.setColour (col::ink2); g.setFont (fnt (12.f));
+    g.drawText (juce::String::fromUTF8 ("Alle Slots nehmen beim Spielen automatisch die letzten 1–16 Takte auf. „Halten“ friert ein, Chip in Ableton ziehen."), 470, sy, 900, 22, juce::Justification::centredLeft);
 }
 
 void Content::resized()
@@ -546,14 +602,20 @@ void Content::resized()
     play.setBounds (430, 14, 90, 32);
     bpm.setBounds (536, 14, 130, 30);
     swing.setBounds (680, 14, 140, 30);
-    fill.setBounds (1170, 16, 60, 28);
-    holdAll.setBounds (1240, 16, 120, 28);
+    soundBtn.setBounds (1170, 16, 76, 28);
+    fill.setBounds (1252, 16, 60, 28);
+    holdAll.setBounds (1318, 16, 140, 28);
+    const int H = getHeight();
     leftView.setBounds (12, 66, 312, H - 76);
     left.setSize (300, 10); left.relayout();
-    for (int t = 0; t < NT; ++t) rows[t]->setBounds (330, 66 + t * 84, W - 342, 80);
-    const int sw = (W - 342 - 30) / 4;
-    for (int i = 0; i < 8; ++i) slotViews[i]->setBounds (330 + (i % 4) * (sw + 10), 772 + (i / 4) * 124, sw, 120);
+    seqToggle.setBounds (334, SEQ_Y + 3, 22, 22);
+    for (int t = 0; t < NT; ++t) rows[t]->setBounds (330, SEQ_Y + 32 + t * ROW_H, W - 342, ROW_H - 4);
+    const int sw = (W - 342 - 30) / 4, y0 = slotsY();
+    for (int i = 0; i < 8; ++i) slotViews[i]->setBounds (330 + (i % 4) * (sw + 10), y0 + (i / 4) * 124, sw, 120);
 }
+
+int Content::slotsY() const { return SEQ_Y + 32 + (proc.seqCollapsed ? 0 : NT * ROW_H) + 34; }
+int Content::contentHeight() const { return juce::jmax (560, slotsY() + 2 * 124 + 10); }
 
 void Content::tick()
 {
@@ -587,11 +649,24 @@ Grids8Editor::Grids8Editor (Grids8Processor& p) : AudioProcessorEditor (p), cont
     juce::LookAndFeel::setDefaultLookAndFeel (&lnf);
     setLookAndFeel (&lnf);
     addAndMakeVisible (content);
+    content.onHeightChange = [this] { updateSize(); };
     setResizable (true, true);
-    setResizeLimits (Content::W / 2, Content::H / 2, Content::W * 2, Content::H * 2);
-    if (auto* c = getConstrainer()) c->setFixedAspectRatio ((double) Content::W / Content::H);
-    setSize ((int) (Content::W * .85), (int) (Content::H * .85));
+    content.setSize (Content::W, content.contentHeight());
+    const int H = content.contentHeight();
+    setResizeLimits (Content::W / 2, H / 2, Content::W * 2, H * 2);
+    if (auto* c = getConstrainer()) c->setFixedAspectRatio ((double) Content::W / H);
+    setSize ((int) (Content::W * .75), (int) (H * .75));
     startTimerHz (30);
+}
+void Grids8Editor::updateSize()
+{
+    const int H = content.contentHeight();
+    const double s = (double) getWidth() / Content::W;
+    if (auto* c = getConstrainer()) c->setFixedAspectRatio ((double) Content::W / H);
+    setResizeLimits (Content::W / 2, H / 2, Content::W * 2, H * 2);
+    setSize (getWidth(), juce::roundToInt (H * s));
+    resized();
+    content.repaint();
 }
 Grids8Editor::~Grids8Editor()
 {
@@ -602,7 +677,7 @@ Grids8Editor::~Grids8Editor()
 void Grids8Editor::resized()
 {
     const float s = (float) getWidth() / (float) Content::W;
-    content.setBounds (0, 0, Content::W, Content::H);
+    content.setBounds (0, 0, Content::W, content.contentHeight());
     content.setTransform (juce::AffineTransform::scale (s));
 }
 } // namespace g8

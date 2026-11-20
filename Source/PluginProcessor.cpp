@@ -33,7 +33,7 @@ static juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
     F ("hTime", "Humanize Timing", 0, 1, 0); F ("hVel", "Humanize Velocity", 0, 1, .15f);
     B ("afOn", "Auto-Fill", false); C ("afEvery", "Auto-Fill alle", { "2 Takte", "4 Takte", "8 Takte" }, 1);
     B ("evOn", "Evolve", false); C ("evEvery", "Evolve alle", { "1 Takt", "2 Takte", "4 Takte", "8 Takte" }, 2);
-    B ("choke", "Hat-Choke 3/4", true); B ("sound", "Interne Sounds", true);
+    B ("choke", "Hat-Choke 3/4", true); B ("sound", "Sound (Vorhoeren)", false);
     C ("noteMap", "Notenbelegung", { "Drum Rack C1-G1", "General MIDI" }, 0);
     C ("midiCh", "MIDI-Kanal", { "Kanal 10", "Kanal 1-8 je Spur" }, 0);
     F ("rndAmt", juce::String::fromUTF8 ("Zufall Stärke"), .05f, 1, .35f);
@@ -48,8 +48,11 @@ static juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
         F (id ("decay"), n + "Decay", .05f, 1, 1); F (id ("pan"), n + "Pan", -1, 1, 0);
         I (id ("len"), n + juce::String::fromUTF8 ("Länge"), 1, 32, 32);
         B (id ("mute"), n + "Mute", false); B (id ("solo"), n + "Solo", false);
-        C (id ("mShape"), n + "Mod Form", toSA (SHAPE_NAMES, 6), 0); C (id ("mRate"), n + "Mod Rate", toSA (RATE_NAMES, 7), 4);
-        F (id ("mDx"), n + "Mod Tiefe X", 0, 1, .3f); F (id ("mDy"), n + "Mod Tiefe Y", 0, 1, .3f); F (id ("mDd"), n + "Mod Tiefe Dichte", 0, 1, 0);
+        C (id ("mShape"), n + "Mod Form", toSA (TRACK_SHAPES, 8), 0); C (id ("mRate"), n + "Mod Rate", toSA (RATE_NAMES, 7), 4);
+        F (id ("mDx"), n + "Mod Tiefe X", -1, 1, .3f); F (id ("mDy"), n + "Mod Tiefe Y", -1, 1, .3f); F (id ("mDd"), n + "Mod Tiefe Dichte", -1, 1, 0);
+        F (id ("mPhase"), n + "Mod Phase/Versatz", 0, 1, 0);
+        I (id ("mAtk"), n + "Env Attack (Steps)", 0, 32, 2); I (id ("mDec"), n + "Env Decay (Steps)", 1, 64, 16);
+        F (id ("mAmt"), n + "Master-Anteil", -1, 1, 1); F (id ("mRot"), n + "Master-Drehung", -180, 180, 0);
     }
     return L;
 }
@@ -67,11 +70,12 @@ Grids8Processor::Grids8Processor()
     {
         auto Q = [&] (const char* k) { return P (tid (t, k)); };
         tp[(size_t) t] = { Q ("x"), Q ("y"), Q ("dens"), Q ("chaos"), Q ("vol"), Q ("pitch"), Q ("decay"), Q ("pan"), Q ("len"),
-                           Q ("mute"), Q ("solo"), Q ("mShape"), Q ("mRate"), Q ("mDx"), Q ("mDy"), Q ("mDd") };
+                           Q ("mute"), Q ("solo"), Q ("mShape"), Q ("mRate"), Q ("mDx"), Q ("mDy"), Q ("mDd"),
+                           Q ("mAmt"), Q ("mRot"), Q ("mPhase"), Q ("mAtk"), Q ("mDec") };
     }
     const int lens[8] = { 1, 2, 4, 8, 16, 4, 8, 16 };
     for (int i = 0; i < 8; ++i) cfg[(size_t) i] = { lens[i], false };
-    for (int t = 0; t < NT; ++t) userSamplePaths.add ({});
+    for (int t = 0; t < NT; ++t) { userSamplePaths.add ({}); trackNames.add (TRACKS[t].name); }
     maps[0].generate (seed.load());
     maps[1] = maps[0];
     for (auto& tr : perturb) for (auto& v : tr) v = rng.nextFloat();
@@ -177,15 +181,40 @@ float Grids8Processor::fillBoost (int t, int64_t g) const
 EffParams Grids8Processor::effParams (int t, int64_t g, float mx, float my, float md, bool) const
 {
     const auto& p = tp[(size_t) t];
-    const int sh = (int) p.mShape->load(), ra = (int) p.mRate->load();
-    const auto s = seed.load();
     const float fb = fillBoost (t, g);
+    // Master-XY je Spur: Anteil (auch negativ = gespiegelt) und Drehung der Bewegungsrichtung
+    const float dx = mx - .5f, dy = my - .5f, amt = p.mAmt->load();
+    const double ang = p.mRot->load() * kPi / 180.0;
+    const float ca = (float) std::cos (ang), sa = (float) std::sin (ang);
+    const float rx = (dx * ca - dy * sa) * amt, ry = (dx * sa + dy * ca) * amt;
     EffParams e;
-    e.x = clamp01 (p.x->load() + (mx - .5f) + modVal (sh, ra, (double) g, s, t, 0) * p.mDx->load() * .5f);
-    e.y = clamp01 (p.y->load() + (my - .5f) + modVal (sh, ra, (double) g, s, t, 1) * p.mDy->load() * .5f);
-    e.d = clamp01 (p.dens->load() + mDens->load() + md + modVal (sh, ra, (double) g, s, t, 2) * p.mDd->load() * .5f + fb);
+    e.x = clamp01 (p.x->load() + rx + trackMod (t, g, 0) * p.mDx->load() * .5f);
+    e.y = clamp01 (p.y->load() + ry + trackMod (t, g, 1) * p.mDy->load() * .5f);
+    e.d = clamp01 (p.dens->load() + mDens->load() + md + trackMod (t, g, 2) * p.mDd->load() * .5f + fb);
     e.c = clamp01 (p.chaos->load() + mChaos->load() + fb * .6f);
     return e;
+}
+
+float Grids8Processor::trackMod (int t, int64_t g, int axis) const
+{
+    const auto& p = tp[(size_t) t];
+    const int sh = (int) p.mShape->load(), ra = juce::jlimit (0, 6, (int) p.mRate->load());
+    if (sh <= 0) return 0.f;
+    const double cyc = RATE_BARS[ra] * 16.0, ph = p.mPhase->load();
+    if (sh <= 5) return modVal (sh, ra, (double) g + ph * cyc, seed.load(), t, axis);
+    // Huellkurven (unipolar 0..1): Attack/Decay in Steps
+    const double atk = p.mAtk->load(), dec = juce::jmax (1.f, p.mDec->load());
+    double pos;
+    if (sh == 6) { pos = std::fmod ((double) g + ph * cyc, cyc); if (pos < 0) pos += cyc; }
+    else
+    {
+        const auto tr = masterMoveStep.load();
+        if (tr == INT64_MIN) return 0.f;
+        pos = (double) (g - tr) - ph * 32.0; // Phase = Verzoegerung bis 2 Takte
+        if (pos < 0) return 0.f;
+    }
+    if (pos < atk) return (float) (pos / juce::jmax (1.0, atk));
+    return (float) juce::jmax (0.0, 1.0 - (pos - atk) / dec);
 }
 
 EffParams Grids8Processor::effParamsUI (int t, int64_t g) const
@@ -315,6 +344,12 @@ void Grids8Processor::doStep (int64_t k, double t0, double sd)
     for (auto& p : tp) anySolo = anySolo || p.solo->load() > .5f;
     auto audible = [&] (int t) { const auto& p = tp[(size_t) t]; return anySolo ? p.solo->load() > .5f : p.mute->load() < .5f; };
 
+    {
+        const float cx = mX->load(), cy = mY->load();
+        const bool moved = lastMX >= 0 && std::abs (cx - lastMX) + std::abs (cy - lastMY) > .004f;
+        if (moved && ! masterMoving) masterMoveStep = k; // Env-Master bei Bewegungsbeginn ausloesen
+        masterMoving = moved; lastMX = cx; lastMY = cy;
+    }
     float mx, my, md; masterEff (k, mx, my, md);
     uint8_t* snap = rec ? curBar.params[curBar.nSteps] : nullptr;
     if (snap) { snap[0] = (uint8_t) std::lround (mx * 127); snap[1] = (uint8_t) std::lround (my * 127); }
@@ -612,7 +647,7 @@ juce::File Grids8Processor::writeSlotMidi (int i, bool multi, juce::File target)
         for (int t = 0; t < NT; ++t)
         {
             juce::MidiMessageSequence seq;
-            seq.addEvent (juce::MidiMessage::textMetaEvent (3, juce::String (t + 1) + " " + TRACKS[t].name), 0);
+            seq.addEvent (juce::MidiMessage::textMetaEvent (3, juce::String (t + 1) + " " + trackNames[t]), 0);
             addNotes (seq, t); addCC (seq, t, t == 0);
             seq.addEvent (juce::MidiMessage::endOfTrack(), end);
             seq.updateMatchedPairs();
@@ -650,7 +685,11 @@ void Grids8Processor::randomize (const juce::String& kind)
         else if (kind == "dens") setParam (tid (t, "dens"), newDens (t));
         else if (kind == "chaos") setParam (tid (t, "chaos"), r.nextFloat() < .5f ? clamp01 (r.nextFloat() * A) : 0.f);
         else if (kind == "sound") { setParam (tid (t, "pitch"), (float) juce::jlimit (-12, 12, (int) std::lround (gauss (r) * 6 * A))); setParam (tid (t, "decay"), r.nextFloat() < .5f ? 1.f : .35f + r.nextFloat() * .65f); setParam (tid (t, "pan"), juce::jlimit (-1.f, 1.f, gauss (r) * .5f * A)); }
-        else if (kind == "mods") { setParam (tid (t, "mShape"), r.nextFloat() < .25f ? 0.f : (float) (1 + r.nextInt (5))); setParam (tid (t, "mRate"), (float) (1 + r.nextInt (6))); setParam (tid (t, "mDx"), clamp01 (r.nextFloat() * A * 1.2f)); setParam (tid (t, "mDy"), clamp01 (r.nextFloat() * A * 1.2f)); setParam (tid (t, "mDd"), r.nextFloat() < .4f ? clamp01 (r.nextFloat() * A * .6f) : 0.f); }
+        else if (kind == "react") { setParam (tid (t, "mAmt"), juce::jlimit (-1.f, 1.f, lerpf (pv (tid (t, "mAmt")), (r.nextFloat() < .2f ? -1.f : 1.f) * (.3f + .7f * r.nextFloat()), juce::jmin (1.f, A * 1.6f))));
+                                    setParam (tid (t, "mRot"), juce::jlimit (-180.f, 180.f, (r.nextFloat() * 2 - 1) * 180.f * juce::jmin (1.f, A * 1.6f))); }
+        else if (kind == "mods") { setParam (tid (t, "mShape"), r.nextFloat() < .2f ? 0.f : (float) (1 + r.nextInt (7)));
+                                   setParam (tid (t, "mPhase"), r.nextFloat()); setParam (tid (t, "mAtk"), (float) r.nextInt (9)); setParam (tid (t, "mDec"), (float) (4 + r.nextInt (40))); setParam (tid (t, "mRate"), (float) (1 + r.nextInt (6))); setParam (tid (t, "mDx"), juce::jlimit (-1.f, 1.f, (r.nextFloat() * 2 - 1) * A * 1.2f)); setParam (tid (t, "mDy"), juce::jlimit (-1.f, 1.f, (r.nextFloat() * 2 - 1) * A * 1.2f)); setParam (tid (t, "mDd"), r.nextFloat() < .4f ? juce::jlimit (-1.f, 1.f, (r.nextFloat() * 2 - 1) * A * .6f) : 0.f); }
+        else if (kind == "phase") setParam (tid (t, "mPhase"), r.nextFloat());
         else if (kind == "len") { static const int L[9] = { 12, 16, 20, 24, 28, 31, 7, 10, 14 }; setParam (tid (t, "len"), (t == 0 || r.nextFloat() > A) ? 32.f : (float) L[r.nextInt (9)]); }
     }
     if (kind == "mutate") { setParam ("mX", clamp01 (pv ("mX") + gauss (r) * A * .15f)); setParam ("mY", clamp01 (pv ("mY") + gauss (r) * A * .15f)); }
@@ -728,6 +767,8 @@ void Grids8Processor::getStateInformation (juce::MemoryBlock& destData)
     juce::ValueTree extra ("Extra");
     extra.setProperty ("seed", (juce::int64) seed.load(), nullptr);
     extra.setProperty ("samples", userSamplePaths.joinIntoString ("\n"), nullptr);
+    extra.setProperty ("names", trackNames.joinIntoString ("\n"), nullptr);
+    extra.setProperty ("seqCollapsed", seqCollapsed, nullptr);
     juce::ValueTree sl ("Slots");
     serializeSlots (sl);
     state.appendChild (extra, nullptr);
@@ -748,6 +789,9 @@ void Grids8Processor::setStateInformation (const void* data, int sizeInBytes)
     if (extra.isValid())
     {
         newMap ((uint32_t) (juce::int64) extra.getProperty ("seed", (juce::int64) 20251120));
+        juce::StringArray names; names.addLines (extra.getProperty ("names").toString());
+        for (int t = 0; t < NT && t < names.size(); ++t) setTrackName (t, names[t]);
+        seqCollapsed = extra.getProperty ("seqCollapsed", false);
         juce::StringArray paths; paths.addLines (extra.getProperty ("samples").toString());
         for (int t = 0; t < NT && t < paths.size(); ++t)
             if (paths[t].isNotEmpty()) { juce::File f (paths[t]); if (f.existsAsFile()) loadUserSample (t, f); }

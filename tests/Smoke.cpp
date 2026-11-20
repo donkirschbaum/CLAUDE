@@ -36,11 +36,22 @@ int main (int argc, char** argv)
     if (argc > 1)
     {
         std::unique_ptr<juce::AudioProcessorEditor> ed (p->createEditor());
-        ed->setSize (g8::Content::W, g8::Content::H);
+        ed->setSize (g8::Content::W, (int) (ed->getHeight() / 0.75));
         auto img = ed->createComponentSnapshot (ed->getLocalBounds(), true, 1.0f);
         juce::File out (argv[1]); out.deleteFile();
         juce::FileOutputStream os (out); juce::PNGImageFormat png; png.writeImageToStream (img, os);
         std::cout << "snapshot " << out.getFullPathName() << "\n";
+        if (argc > 2)
+        {
+            p->seqCollapsed = true;
+            std::unique_ptr<juce::AudioProcessorEditor> ed2 (p->createEditor());
+            const int h = ed2->getHeight(), w = ed2->getWidth();
+            ed2->setSize (g8::Content::W, (int) (h * (double) g8::Content::W / w));
+            auto img2 = ed2->createComponentSnapshot (ed2->getLocalBounds(), true, 1.0f);
+            juce::File out2 (argv[2]); out2.deleteFile();
+            juce::FileOutputStream os2 (out2); png.writeImageToStream (img2, os2);
+            std::cout << "collapsed size " << w << "x" << h << "\n";
+        }
     }
     return 0;
 }

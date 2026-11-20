@@ -80,14 +80,16 @@ public:
 private:
     Grids8Processor& proc; int track;
     juce::TextButton fileBtn, mute { "M" }, solo { "S" }, dice { "?" };
+    juce::Label nameLabel;
     XYPad pad;
-    LabeledSlider dens, chaos, len, vol, pitch, decay, mdx, mdy, mdd;
+    LabeledSlider dens, chaos, len, amt, rot, vol, pitch, decay, mdx, mdy, mdd, phase, atk, dec;
     StepView steps;
     juce::ComboBox shape, rate;
     std::unique_ptr<APVTS::ButtonAttachment> aMute, aSolo;
     std::unique_ptr<APVTS::ComboBoxAttachment> aShape, aRate;
     std::unique_ptr<juce::FileChooser> chooser;
-    uint32_t lastHits = 0; float flash = 0; int modX = 0;
+    uint32_t lastHits = 0; float flash = 0; int modX = 0, lastShape = -1;
+    void updateModVisibility();
 };
 
 class Section : public juce::Component
@@ -152,9 +154,9 @@ public:
     void paint (juce::Graphics&) override;
 private:
     juce::ComboBox noteMap, midiCh;
-    juce::ToggleButton choke { "Hat-Choke (Spur 3/4)" }, sound { "Interne Sounds" };
+    juce::ToggleButton choke { "Hat-Choke (Spur 3/4)" };
     std::unique_ptr<APVTS::ComboBoxAttachment> aNote, aCh;
-    std::unique_ptr<APVTS::ButtonAttachment> aChoke, aSound;
+    std::unique_ptr<APVTS::ButtonAttachment> aChoke;
     juce::Rectangle<int> infoArea;
 };
 
@@ -203,10 +205,14 @@ public:
     void paint (juce::Graphics&) override;
     void resized() override;
     void tick();
-    static constexpr int W = 1480, H = 1020;
+    static constexpr int W = 1480, ROW_H = 104, SEQ_Y = 66;
+    int contentHeight() const;
+    std::function<void()> onHeightChange;
 private:
     Grids8Processor& proc;
-    juce::TextButton play { "Play" }, fill { "Fill" }, holdAll { "Alle halten" };
+    juce::TextButton play { "Play" }, fill { "Fill" }, holdAll { "Alle halten" }, soundBtn { "Sound" }, seqToggle { "-" };
+    std::unique_ptr<APVTS::ButtonAttachment> aSound;
+    int slotsY() const;
     LabeledSlider bpm, swing;
     juce::Viewport leftView;
     LeftPanel left;
@@ -225,6 +231,7 @@ public:
     void paint (juce::Graphics& g) override { g.fillAll (col::panel); }
 private:
     void timerCallback() override { content.tick(); }
+    void updateSize();
     LnF lnf;
     Content content;
 };

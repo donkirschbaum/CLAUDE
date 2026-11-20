@@ -11,14 +11,17 @@ Installation: Zip entpacken, im Terminal `bash ~/Downloads/Grids8/Installieren.c
 
 ## Funktionen
 
-- 8 Spuren (Kick, Clap, Hat 1, Hat 2, Snare, Tom 1, Tom 2, Conga) mit eingebauten Samples, eigene Samples per Klick auf den Dateinamen
-- je Spur: X/Y-Feld, Dichte, Chaos, Länge (Polymetrie), Volume, Pitch, Decay, Modulation (Sinus, Dreieck, Säge, S&H, Drift) auf X/Y/Dichte, Mute/Solo, Würfel
+- **MIDI-Generator**: interne Sounds sind aus, nur zum Vorhören per Knopf „Sound“
+- 8 Spuren (Namen per Doppelklick änderbar), Sektion „Sequencer“ einklappbar
+- je Spur: X/Y-Feld, Dichte, Chaos, Länge (Polymetrie), Mute/Solo, Würfel
+- je Spur eigene Modulation von X/Y/Dichte: LFO (Sinus, Dreieck, Säge, S&H, Drift) oder Hüllkurve (pro Zyklus oder ausgelöst durch Master-XY-Bewegung) mit Attack/Decay und Versatz (Phase/Verzögerung)
+- je Spur Reaktion auf Master-XY: Anteil (auch negativ) und Drehung – so bewegt jede Spur sich beim Master-XY anders
 - Master X/Y verschiebt alle Spuren, Master-Dichte, -Chaos, -Modulation
 - Zufall: Alles würfeln, Mutieren, Neue Map, XY, Dichten, Chaos, Mutes, Sound, Modulation, XY-Glide, Längen, Tempo/Swing, Evolve, Auto-Fill, Humanize
 - folgt Tempo, Transport und Songposition des Hosts; alle Regler automatisierbar
 - **8 Slots nehmen ständig auf** (letzte 1/2/4/8/16 Takte, pro Slot einstellbar), „Halten“ friert ein
 - Slot-Chip **„Drum Rack ziehen“** direkt auf eine Ableton-MIDI-Spur ziehen (Noten C1–G1 = Pads 1–8, Modulation als CC-Hüllkurven), „8 Spuren ziehen“ für getrennte Spuren
-- MIDI-Ausgang (Kanal 10 oder 1–8 je Spur), interne Sounds abschaltbar
+- MIDI-Ausgang (Kanal 10 oder 1–8 je Spur)
 
 ## Selbst bauen
 

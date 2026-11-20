@@ -86,6 +86,10 @@ public:
     std::atomic<bool> fillHeld { false }, internalPlay { false };
     std::atomic<float> hostBpm { 120.f };
     std::atomic<bool> hostPlaying { false };
+    std::atomic<int64_t> masterMoveStep { INT64_MIN };
+    juce::String getTrackName (int t) const { return trackNames[t]; }
+    void setTrackName (int t, const juce::String& n) { trackNames.set (t, n.trim().isEmpty() ? juce::String (TRACKS[t].name) : n.trim().substring (0, 16)); ++slotsVersion; }
+    bool seqCollapsed = false;
 
     // Zufall
     void randomize (const juce::String& kind);
@@ -122,6 +126,7 @@ private:
     EffParams effParams (int t, int64_t g, float mx, float my, float md, bool audio) const;
     void masterEff (int64_t g, float& x, float& y, float& d) const;
     float fillBoost (int t, int64_t g) const;
+    float trackMod (int t, int64_t g, int axis) const;
     void pushBar();
     void updateLiveSlots();
     void fillSlot (int i);
@@ -138,7 +143,8 @@ private:
     juce::Random rng, uiRng;
 
     // Parameter-Zeiger
-    struct TP { std::atomic<float> *x, *y, *dens, *chaos, *vol, *pitch, *decay, *pan, *len, *mute, *solo, *mShape, *mRate, *mDx, *mDy, *mDd; };
+    struct TP { std::atomic<float> *x, *y, *dens, *chaos, *vol, *pitch, *decay, *pan, *len, *mute, *solo, *mShape, *mRate, *mDx, *mDy, *mDd,
+                *mAmt, *mRot, *mPhase, *mAtk, *mDec; };
     std::array<TP, NT> tp {};
     std::atomic<float> *mX, *mY, *mDens, *mChaos, *mVol, *mShape, *mRate, *mDx, *mDy, *mDd, *swing, *intBpm,
         *hTime, *hVel, *afOn, *afEvery, *choke, *sound, *noteMap, *midiCh, *evOn, *evEvery, *rndAmt;
@@ -173,6 +179,8 @@ private:
     struct Glide { bool on = false; int64_t g0 = 0; float x0, y0, x1, y1; } glide;
 
     juce::StringArray userSamplePaths;
+    juce::StringArray trackNames;
+    float lastMX = -1, lastMY = -1; bool masterMoving = false;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (Grids8Processor)
 };
 } // namespace g8
