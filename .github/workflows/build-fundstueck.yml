@@ -53,7 +53,8 @@ jobs:
           pkgbuild --analyze --root pkgroot components.plist
           i=0
           while /usr/libexec/PlistBuddy -c "Print :$i" components.plist >/dev/null 2>&1; do
-            /usr/libexec/PlistBuddy -c "Set :$i:BundleIsRelocatable false" components.plist
+            /usr/libexec/PlistBuddy -c "Set :$i:BundleIsRelocatable false" components.plist 2>/dev/null \
+              || /usr/libexec/PlistBuddy -c "Add :$i:BundleIsRelocatable bool false" components.plist
             i=$((i+1))
           done
           mkdir -p scripts
