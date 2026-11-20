@@ -7,7 +7,7 @@ class ShakerProcessor : public juce::AudioProcessor
 {
 public:
     ShakerProcessor();
-    ~ShakerProcessor() override = default;
+    ~ShakerProcessor() override;
 
     void prepareToPlay (double sampleRate, int samplesPerBlock) override;
     void releaseResources() override {}
@@ -45,6 +45,16 @@ public:
     void removeCustom (int libIndex);
     void setRegion (int t, float start, float end);
 
+    // --- Audio-Export des kompletten Loops ---
+    void startExport();
+    double loopBeats (bool capped) const;       // Länge, bis sich alle Spuren wiederholen
+    double exportBpm() const;
+    static constexpr double maxExportBars = 128.0;
+    std::atomic<int> exportState { 0 };         // 0 bereit, 1 rendert, 2 fertig, 3 Fehler
+    std::atomic<float> exportProgress { 0.0f };
+    juce::File exportFile;                      // gültig, wenn exportState == 2
+    juce::String exportInfo;
+
     void setParam (const juce::String& id, float value);
     float getParam (const juce::String& id) const;
     static juce::String tid (int t, const char* name) { return "t" + juce::String (t) + "_" + name; }
@@ -56,12 +66,16 @@ public:
     std::atomic<bool> internalPlay { false };
     std::atomic<bool> hostPlaying { false };
     std::atomic<double> hostBpm { 120.0 };
+    std::atomic<bool> hostBpmKnown { false };
     std::atomic<int> uiVersion { 0 };     // erhöht sich, wenn Samples/Pattern von außen geändert wurden
     std::atomic<int> libVersion { 0 };    // erhöht sich, wenn die Sample-Liste sich ändert
 
 private:
     static juce::AudioProcessorValueTreeState::ParameterLayout createLayout();
     void cacheParams();
+    void readParams (shaker::TrackParams* out, shaker::GlobalParams& g) const;
+    class ExportJob;
+    std::unique_ptr<ExportJob> exportJob;
     void applyRoleMix (int t);
 
     struct TrackPtrs

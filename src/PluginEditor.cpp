@@ -735,11 +735,103 @@ void SampleEditorView::tick()
     if (el > -0.1 && el < 5.0) repaint (waveArea().toNearestInt().expanded (2));
 }
 
+// ================= Export-Kachel =================
+ExportTile::ExportTile (ShakerProcessor& p) : proc (p)
+{
+    addChildComponent (finder);
+    finder.onClick = [this] { if (proc.exportFile.existsAsFile()) proc.exportFile.revealToUser(); };
+}
+
+void ExportTile::resized() { finder.setBounds (10, getHeight() - 30, getWidth() - 20, 24); }
+
+void ExportTile::paint (juce::Graphics& g)
+{
+    auto r = getLocalBounds().toFloat().reduced (1.0f);
+    const int st = proc.exportState.load();
+    const auto acc = ui::track[2];
+    g.setColour (st == 2 ? acc.withAlpha (0.16f) : ui::panel2);
+    g.fillRoundedRectangle (r, 10.0f);
+    g.setColour (st == 2 ? acc : ui::line);
+    if (st == 2)
+    {
+        juce::Path border;
+        border.addRoundedRectangle (r, 10.0f);
+        const float dash[] = { 5.0f, 4.0f };
+        juce::PathStrokeType (1.5f).createDashedStroke (border, border, dash, 2);
+        g.fillPath (border);
+    }
+    else g.drawRoundedRectangle (r, 10.0f, 1.0f);
+
+    auto txt = r.reduced (10, 6);
+    if (st == 0 || st == 3)
+    {
+        g.setColour (ui::text);
+        g.setFont (ui::font (13.0f, true));
+        g.drawText (st == 3 ? "Export fehlgeschlagen" : "Loop-Export", txt.removeFromTop (18), juce::Justification::left);
+        g.setColour (ui::mute);
+        g.setFont (ui::font (11.5f));
+        const double beats = proc.loopBeats (true), bpm = proc.exportBpm();
+        g.drawFittedText ("Export rendert " + juce::String (beats / 4.0, std::abs (beats / 4.0 - std::round (beats / 4.0)) < 1e-6 ? 0 : 2)
+                          + " Takte bei " + juce::String (bpm, 1) + " BPM als WAV, bis sich alle Spuren wiederholen.",
+                          txt.toNearestInt(), juce::Justification::topLeft, 4);
+    }
+    else if (st == 1)
+    {
+        g.setColour (ui::text);
+        g.setFont (ui::font (13.0f, true));
+        g.drawText ("Rendere ...", txt.removeFromTop (18), juce::Justification::left);
+        g.setColour (ui::mute);
+        g.setFont (ui::font (11.5f));
+        g.drawText (proc.exportInfo, txt.removeFromTop (16), juce::Justification::left);
+        auto bar = txt.removeFromTop (26).withSizeKeepingCentre (txt.getWidth(), 8);
+        g.setColour (ui::line);
+        g.fillRoundedRectangle (bar, 4.0f);
+        g.setColour (acc);
+        g.fillRoundedRectangle (bar.withWidth (bar.getWidth() * proc.exportProgress.load()), 4.0f);
+    }
+    else
+    {
+        g.setColour (acc);
+        g.setFont (ui::font (14.0f, true));
+        g.drawText ("WAV in Ableton ziehen", txt.removeFromTop (20), juce::Justification::left);
+        g.setColour (ui::text);
+        g.setFont (ui::font (11.5f));
+        g.drawText (proc.exportInfo, txt.removeFromTop (16), juce::Justification::left);
+        g.setColour (ui::mute);
+        g.drawText (proc.exportFile.getFileName(), txt.removeFromTop (16), juce::Justification::left, true);
+    }
+}
+
+void ExportTile::mouseDrag (const juce::MouseEvent& e)
+{
+    if (dragging || proc.exportState.load() != 2 || e.getDistanceFromDragStart() < 6) return;
+    if (! proc.exportFile.existsAsFile()) return;
+    dragging = true;
+    juce::DragAndDropContainer::performExternalDragDropOfFiles ({ proc.exportFile.getFullPathName() }, false, this, [this] { dragging = false; });
+}
+
+void ExportTile::tick()
+{
+    const int st = proc.exportState.load();
+    const float pr = proc.exportProgress.load();
+    finder.setVisible (st == 2);
+    setMouseCursor (st == 2 ? juce::MouseCursor::DraggingHandCursor : juce::MouseCursor::NormalCursor);
+    if (st != lastState || (st == 1 && std::abs (pr - lastProg) > 0.005f) || st == 0)
+    {
+        lastState = st; lastProg = pr;
+        repaint();
+    }
+}
+
 // ================= Editor =================
 ShakerEditor::ShakerEditor (ShakerProcessor& p) : AudioProcessorEditor (&p), proc (p), detail (p), sampleEd (p)
 {
     setLookAndFeel (&look);
-    for (auto* b : { &playB, &randB, &patB, &smpB, &mutB }) addAndMakeVisible (*b);
+    for (auto* b : { &playB, &randB, &patB, &smpB, &mutB, &expB }) addAndMakeVisible (*b);
+    expB.setColour (juce::TextButton::buttonColourId, ui::track[2].withAlpha (0.3f));
+    expB.setTooltip ("Kompletten Loop als WAV rendern");
+    expB.onClick = [this] { proc.startExport(); };
+    addAndMakeVisible (exportTile);
     playB.setClickingTogglesState (true);
     playB.setColour (juce::TextButton::buttonOnColourId, ui::track[1]);
     playB.setTooltip ("Interner Play, wenn der Host gestoppt ist");
@@ -810,11 +902,13 @@ void ShakerEditor::resized()
     patB.setBounds (356, 8, 90, 32);
     smpB.setBounds (450, 8, 90, 32);
     mutB.setBounds (544, 8, 90, 32);
-    polyDice.setBounds (646, 10, 270, 28);
-    status.setBounds (W - 220, 10, 204, 28);
+    expB.setBounds (638, 8, 90, 32);
+    polyDice.setBounds (738, 10, 200, 28);
+    status.setBounds (W - 116, 10, 100, 28);
+    exportTile.setBounds (848, 50, 198, 108);
     for (size_t i = 0; i < globals.size(); ++i)
         globals[i]->setBounds (18 + (int) i * 82, 50, 78, 92);
-    ratio.setBounds (20, 140, W - 40, 18);
+    ratio.setBounds (20, 140, 820, 18);
     for (int t = 0; t < kTracks; ++t)
         rows[t]->setBounds (8, rowsY + t * rowH, W - 16, rowH - 6);
     detail.setBounds (8, detailY, W - 16, H - detailY - 8);
@@ -852,6 +946,8 @@ void ShakerEditor::timerCallback()
     }
     for (auto& r : rows) r->tick();
     if (sampleEd.isVisible()) sampleEd.tick();
+    exportTile.tick();
+    expB.setEnabled (proc.exportState.load() != 1);
 
     // Status und gemeinsamer Zyklus
     const bool hp = proc.hostPlaying.load();

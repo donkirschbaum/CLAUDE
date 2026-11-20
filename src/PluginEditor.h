@@ -131,6 +131,23 @@ private:
     std::unique_ptr<juce::FileChooser> chooser;
 };
 
+// Zeigt den Export-Fortschritt; die fertige WAV lässt sich von hier in Ableton ziehen.
+class ExportTile : public juce::Component
+{
+public:
+    explicit ExportTile (ShakerProcessor& p);
+    void paint (juce::Graphics&) override;
+    void resized() override;
+    void mouseDrag (const juce::MouseEvent&) override;
+    void tick();
+private:
+    ShakerProcessor& proc;
+    juce::TextButton finder { "Im Finder zeigen" };
+    int lastState = -1;
+    float lastProg = -1;
+    bool dragging = false;
+};
+
 class ShakerEditor : public juce::AudioProcessorEditor, private juce::Timer
 {
 public:
@@ -144,8 +161,9 @@ private:
     void refreshAll();
     ShakerProcessor& proc;
     ShakerLook look;
-    juce::TextButton playB { "Play" }, randB { "Zufall" }, patB { "Pattern" }, smpB { "Samples" }, mutB { "Mutieren" };
-    juce::ToggleButton polyDice { "Schritte, Modus & Tempo mitwuerfeln" };
+    juce::TextButton playB { "Play" }, randB { "Zufall" }, patB { "Pattern" }, smpB { "Samples" }, mutB { "Mutieren" }, expB { "Export" };
+    ExportTile exportTile { proc };
+    juce::ToggleButton polyDice { "Schritte/Modus/Tempo mitwuerfeln" };
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> polyAtt;
     std::vector<std::unique_ptr<Knob>> globals;
     juce::Label status, ratio;

@@ -117,14 +117,11 @@ void ShakerProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     engine.prepare (sampleRate, juce::jmax (16, samplesPerBlock));
 }
 
-void ShakerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi)
+void ShakerProcessor::readParams (TrackParams* out, GlobalParams& g) const
 {
-    juce::ScopedNoDenormals noDenormals;
-    midi.clear();
-
     for (int t = 0; t < kTracks; ++t)
     {
-        auto& p = tp[t];
+        auto& p = out[t];
         auto v = [this, t] (int k) { return tptr[t].v[k]->load(); };
         p.gain = v (gain); p.tune = v (tune); p.fine = v (fine); p.attack = v (attack); p.decay = v (decay); p.sustain = v (sustain);
         p.release = v (release); p.lowcut = v (lowcut); p.highcut = v (highcut); p.reso = v (reso); p.bodyF = v (bodyf); p.body = v (body);
@@ -134,9 +131,146 @@ void ShakerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
         p.rProb = v (rprob); p.rTime = v (rtime); p.rVel = v (rvel); p.rPitch = v (rpitch); p.rLen = v (rlen); p.rStart = v (rstart);
         p.rRev = v (rrev); p.rPan = v (rpan); p.rRatchet = v (rratchet);
     }
-    gp.swing = gptr[swing]->load(); gp.chaos = gptr[chaos]->load(); gp.evolve = gptr[evolve]->load(); gp.drift = gptr[drift]->load();
-    gp.density = gptr[density]->load(); gp.ghost = gptr[ghost]->load(); gp.room = gptr[room]->load(); gp.roomSize = gptr[roomsize]->load();
-    gp.master = gptr[master]->load(); gp.tempo = gptr[tempo]->load();
+    g.swing = gptr[swing]->load(); g.chaos = gptr[chaos]->load(); g.evolve = gptr[evolve]->load(); g.drift = gptr[drift]->load();
+    g.density = gptr[density]->load(); g.ghost = gptr[ghost]->load(); g.room = gptr[room]->load(); g.roomSize = gptr[roomsize]->load();
+    g.master = gptr[master]->load(); g.tempo = gptr[tempo]->load();
+}
+
+// ---------------- Export ----------------
+// Rendert den Loop offline mit einer eigenen Engine-Instanz im Hintergrund.
+class ShakerProcessor::ExportJob : public juce::Thread
+{
+public:
+    ExportJob (ShakerProcessor& p, double sampleRate, double bpmIn, double beatsIn, juce::File f)
+        : juce::Thread ("Shaker Lab Export"), proc (p), sr (sampleRate), bpm (bpmIn), beats (beatsIn), file (std::move (f))
+    {
+        proc.readParams (tp, gp);
+        for (int t = 0; t < kTracks; ++t)
+        {
+            auto& s = proc.engine.shared[t];
+            sample[t] = s.sample.load(); start[t] = s.start.load(); end[t] = s.end.load();
+            for (int i = 0; i < kMaxSteps; ++i) pat[t][i] = s.pat[(size_t) i].load();
+        }
+    }
+
+    void run() override
+    {
+        Engine e (proc.lib);
+        const int block = 512;
+        e.prepare (sr, block);
+        for (int t = 0; t < kTracks; ++t)
+        {
+            e.shared[t].sample.store (sample[t]);
+            e.shared[t].start.store (start[t]);
+            e.shared[t].end.store (end[t]);
+            for (int i = 0; i < kMaxSteps; ++i) e.shared[t].pat[(size_t) i].store (pat[t][i]);
+        }
+        const double spb = sr * 60.0 / bpm;
+        const int total = (int) std::floor (beats * spb);
+        const int tail = (int) (sr * 4.0);                 // Ausklang, wird auf den Anfang gefaltet
+        juce::AudioBuffer<float> out (2, total + tail);
+        out.clear();
+        juce::AudioBuffer<float> buf (2, block);
+
+        for (int pos = 0; pos < total + tail;)
+        {
+            if (threadShouldExit()) { proc.exportState.store (0); return; }
+            int n = juce::jmin (block, total + tail - pos);
+            if (pos < total && pos + n > total) n = total - pos;   // Block endet genau am Loop-Ende
+            juce::AudioBuffer<float> b (buf.getArrayOfWritePointers(), 2, n);
+            // minimal früher, damit der erste Schritt der Wiederholung nicht mehr ausgelöst wird
+            Transport tr { pos < total, pos / spb - 1e-9, bpm };
+            e.process (b, tr, gp, tp);
+            for (int c = 0; c < 2; ++c) out.copyFrom (c, pos, b, c, 0, n);
+            pos += n;
+            proc.exportProgress.store ((float) pos / (float) (total + tail));
+        }
+
+        // Ausklang auf den Anfang falten → nahtloser Loop
+        juce::AudioBuffer<float> loop (2, total);
+        for (int c = 0; c < 2; ++c)
+        {
+            loop.copyFrom (c, 0, out, c, 0, total);
+            for (int i = 0; i < tail; ++i)
+                loop.addSample (c, i % juce::jmax (1, total), out.getSample (c, total + i));
+        }
+        const float pk = loop.getMagnitude (0, total);
+        if (pk > 0.99f) loop.applyGain (0.99f / pk);
+
+        file.getParentDirectory().createDirectory();
+        file.deleteFile();
+        juce::WavAudioFormat wav;
+        std::unique_ptr<juce::OutputStream> stream = std::make_unique<juce::FileOutputStream> (file);
+        auto w = wav.createWriterFor (stream, juce::AudioFormatWriterOptions{}.withSampleRate (sr).withNumChannels (2).withBitsPerSample (24));
+        const bool ok = w != nullptr && w->writeFromAudioSampleBuffer (loop, 0, total);
+        w.reset();
+        proc.exportFile = file;
+        proc.exportState.store (ok ? 2 : 3);
+    }
+
+private:
+    ShakerProcessor& proc;
+    double sr, bpm, beats;
+    juce::File file;
+    TrackParams tp[kTracks];
+    GlobalParams gp;
+    int sample[kTracks] {};
+    float start[kTracks] {}, end[kTracks] {};
+    float pat[kTracks][kMaxSteps] {};
+};
+
+ShakerProcessor::~ShakerProcessor()
+{
+    if (exportJob) exportJob->stopThread (5000);
+}
+
+double ShakerProcessor::exportBpm() const
+{
+    return hostBpmKnown.load() ? hostBpm.load() : (double) getParam ("tempo");
+}
+
+double ShakerProcessor::loopBeats (bool capped) const
+{
+    long N = 1, D = 0;
+    for (int t = 0; t < kTracks; ++t)
+    {
+        long n, d;
+        cycleFraction (juce::roundToInt (getParam (tid (t, "steps"))), juce::roundToInt (getParam (tid (t, "mode"))),
+                       juce::roundToInt (getParam (tid (t, "rate"))), n, d);
+        N = N / std::gcd (N, n) * n;
+        D = D == 0 ? d : std::gcd (D, d);
+        if (N > 1000000) break;
+    }
+    const double b = (double) N / (double) D;
+    return capped ? juce::jmin (b, maxExportBars * 4.0) : b;
+}
+
+void ShakerProcessor::startExport()
+{
+    if (exportState.load() == 1) return;
+    if (exportJob) exportJob->stopThread (5000);
+    const double bpm = exportBpm();
+    const double beats = loopBeats (true);
+    const double rate = getSampleRate() > 0 ? getSampleRate() : 48000.0;
+    const double bars = beats / 4.0;
+    const juce::String barsTxt = std::abs (bars - std::round (bars)) < 1e-6 ? juce::String ((int) std::round (bars)) : juce::String (bars, 2);
+    const auto name = "Shaker Lab - " + juce::String (juce::roundToInt (bpm)) + " BPM - " + barsTxt + (bars == 1.0 ? " Takt - " : " Takte - ")
+                      + juce::Time::getCurrentTime().formatted ("%Y-%m-%d %H%M%S") + ".wav";
+    auto f = juce::File::getSpecialLocation (juce::File::userMusicDirectory).getChildFile ("Shaker Lab Exports").getChildFile (name);
+    exportInfo = barsTxt + (bars == 1.0 ? " Takt" : " Takte") + " @ " + juce::String (bpm, 1) + " BPM"
+                 + (loopBeats (false) > beats + 1e-6 ? " (auf " + juce::String ((int) maxExportBars) + " Takte gekuerzt)" : juce::String());
+    exportProgress.store (0.0f);
+    exportState.store (1);
+    exportJob = std::make_unique<ExportJob> (*this, rate, bpm, beats, f);
+    exportJob->startThread();
+}
+
+void ShakerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi)
+{
+    juce::ScopedNoDenormals noDenormals;
+    midi.clear();
+
+    readParams (tp, gp);
 
     // Transport: Host hat Vorrang, sonst interner Play-Knopf
     Transport tr;
@@ -148,6 +282,7 @@ void ShakerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
             tr.bpm = pos->getBpm().orFallback (120.0);
             tr.ppq = pos->getPpqPosition().orFallback (0.0);
             hostBpm.store (tr.bpm);
+            if (pos->getBpm().hasValue()) hostBpmKnown.store (true);
         }
     hostPlaying.store (hp);
     if (hp)
