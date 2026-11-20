@@ -1,5 +1,6 @@
 #pragma once
 
+#include <juce_audio_formats/juce_audio_formats.h>
 #include <juce_audio_processors/juce_audio_processors.h>
 #include "Looper.h"
 #include "TapeDelay.h"
@@ -54,7 +55,21 @@ public:
         std::atomic<bool> pendingDub { false };
         std::atomic<double> loopSeconds { 0.0 }, position { 0.0 }, recSeconds { 0.0 }, recTargetSeconds { 0.0 };
         std::atomic<float> outLevel { 0.0f };
+        std::atomic<double> hostBpm { 120.0 };
+        std::atomic<bool> hostBpmKnown { false };
+        std::atomic<float> delayMs { 400.0f };
     } info;
+
+    // ---- export (message thread)
+    // layer = -1: mix of all active layers, otherwise a single layer
+    bool renderLoop (juce::AudioBuffer<float>& out, int layer);
+    juce::Result writeWav (const juce::File& file, int layer);
+    // writes every active layer + the mix into a folder, returns number of files
+    int writeAllLayers (const juce::File& folder);
+    // renders the mix into ~/Music/LoopTape and returns the file (for drag & drop)
+    juce::File renderToExportFolder();
+    juce::String suggestedFileName (const juce::String& suffix) const;
+    static juce::File defaultExportFolder();
 
     juce::AudioProcessorValueTreeState apvts;
     static juce::AudioProcessorValueTreeState::ParameterLayout createLayout();
@@ -70,6 +85,7 @@ private:
     lt::Looper looper;
 
     std::atomic<uint32_t> pendingCommands { 0 };
+    juce::CriticalSection exportLock; // keeps prepareToPlay from reallocating during an export copy
     bool lastTrig[5] {};
 
     juce::SmoothedValue<float> dryGainSm, wetGainSm, loopGainSm;

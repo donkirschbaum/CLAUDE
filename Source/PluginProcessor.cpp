@@ -123,6 +123,7 @@ bool LoopTapeProcessor::isBusesLayoutSupported (const BusesLayout& layouts) cons
 
 void LoopTapeProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
+    const juce::ScopedLock sl (exportLock);
     delay.prepare (sampleRate);
     looper.prepare (sampleRate);
     looper.allocateExtraLayers();
@@ -153,10 +154,11 @@ void LoopTapeProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
     // ---- host tempo
     double bpm = 120.0;
     int beatsPerBar = 4;
+    bool bpmKnown = false;
     if (auto* ph = getPlayHead())
         if (auto pos = ph->getPosition())
         {
-            if (auto b = pos->getBpm()) bpm = juce::jlimit (20.0, 400.0, *b);
+            if (auto b = pos->getBpm()) { bpm = juce::jlimit (20.0, 400.0, *b); bpmKnown = true; }
             if (auto ts = pos->getTimeSignature()) beatsPerBar = juce::jmax (1, ts->numerator);
         }
     const double sr = getSampleRate();
@@ -174,6 +176,9 @@ void LoopTapeProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
     dp.hiss = pHiss->load();
     dp.mode = (int) pMode->load();
     delay.setParams (dp);
+    info.hostBpm.store (bpm);
+    info.hostBpmKnown.store (bpmKnown);
+    info.delayMs.store (dp.timeMs);
 
     const float mix = pMix->load();
     dryGainSm.setTargetValue (pKillDry->load() > 0.5f ? 0.0f : juce::jmin (1.0f, 2.0f * (1.0f - mix)));
@@ -259,6 +264,85 @@ void LoopTapeProcessor::setStateInformation (const void* data, int sizeInBytes)
             for (auto* id : trigIds)
                 if (auto* prm = apvts.getParameter (id)) prm->setValueNotifyingHost (0.0f);
         }
+}
+
+//============================================================================== export
+bool LoopTapeProcessor::renderLoop (juce::AudioBuffer<float>& out, int layer)
+{
+    const juce::ScopedLock sl (exportLock);
+    const int64_t len = looper.getLoopLength();
+    const int layers = info.layers.load();
+    if (len <= 0 || layers <= 0 || len > std::numeric_limits<int>::max()) return false;
+
+    out.setSize (2, (int) len, false, true, false);
+    out.clear();
+    if (layer >= 0)
+        return layer < layers && looper.copyLayer (layer, out.getWritePointer (0), out.getWritePointer (1));
+
+    juce::AudioBuffer<float> tmp (2, (int) len);
+    bool any = false;
+    for (int k = 0; k < layers; ++k)
+        if (looper.copyLayer (k, tmp.getWritePointer (0), tmp.getWritePointer (1)))
+        {
+            for (int c = 0; c < 2; ++c) out.addFrom (c, 0, tmp, c, 0, (int) len);
+            any = true;
+        }
+    return any;
+}
+
+juce::Result LoopTapeProcessor::writeWav (const juce::File& file, int layer)
+{
+    juce::AudioBuffer<float> buf;
+    if (! renderLoop (buf, layer)) return juce::Result::fail ("Kein Loop vorhanden.");
+
+    file.getParentDirectory().createDirectory();
+    file.deleteFile();
+    std::unique_ptr<juce::OutputStream> stream = std::make_unique<juce::FileOutputStream> (file);
+    if (! static_cast<juce::FileOutputStream*> (stream.get())->openedOk())
+        return juce::Result::fail ("Datei kann nicht geschrieben werden: " + file.getFullPathName());
+
+    // 32-bit float: summed layers can exceed 0 dBFS without clipping
+    juce::WavAudioFormat wav;
+    auto opts = juce::AudioFormatWriterOptions()
+                    .withSampleRate (looper.getSampleRate())
+                    .withNumChannels (2)
+                    .withBitsPerSample (32)
+                    .withSampleFormat (juce::AudioFormatWriterOptions::SampleFormat::floatingPoint);
+    auto writer = wav.createWriterFor (stream, opts);
+    if (writer == nullptr) return juce::Result::fail ("WAV-Writer konnte nicht erstellt werden.");
+    if (! writer->writeFromAudioSampleBuffer (buf, 0, buf.getNumSamples()))
+        return juce::Result::fail ("Fehler beim Schreiben.");
+    return juce::Result::ok();
+}
+
+int LoopTapeProcessor::writeAllLayers (const juce::File& folder)
+{
+    folder.createDirectory();
+    int written = 0;
+    if (writeWav (folder.getChildFile (suggestedFileName ("Mix")), -1).wasOk()) ++written;
+    const int layers = info.layers.load();
+    for (int k = 0; k < layers; ++k)
+        if (writeWav (folder.getChildFile (suggestedFileName ("Layer" + juce::String (k + 1).paddedLeft ('0', 2))), k).wasOk())
+            ++written;
+    return written;
+}
+
+juce::File LoopTapeProcessor::defaultExportFolder()
+{
+    return juce::File::getSpecialLocation (juce::File::userMusicDirectory).getChildFile ("LoopTape");
+}
+
+juce::String LoopTapeProcessor::suggestedFileName (const juce::String& suffix) const
+{
+    const auto now = juce::Time::getCurrentTime().formatted ("%Y-%m-%d_%H%M%S");
+    const auto bpm = juce::String (info.hostBpm.load(), 1).trimCharactersAtEnd ("0").trimCharactersAtEnd (".");
+    return "LoopTape_" + bpm + "bpm_" + now + "_" + suffix + ".wav";
+}
+
+juce::File LoopTapeProcessor::renderToExportFolder()
+{
+    auto f = defaultExportFolder().getChildFile (suggestedFileName ("Mix"));
+    return writeWav (f, -1).wasOk() ? f : juce::File();
 }
 
 juce::AudioProcessorEditor* LoopTapeProcessor::createEditor() { return new LoopTapeEditor (*this); }

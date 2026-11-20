@@ -10,7 +10,7 @@ Loop-Teppich.
 
 ## ⬇️ Download
 
-**[→ Neueste Version herunterladen (Releases)](https://github.com/donkirschbaum/CLAUDE/releases/tag/looptape-v1.0.0)**
+**[→ Neueste Version herunterladen (Releases)](https://github.com/donkirschbaum/CLAUDE/releases/tag/looptape-v1.1.0)**
 
 | Datei | Wofür |
 |---|---|
@@ -37,7 +37,9 @@ sudo xattr -dr com.apple.quarantine /Library/Audio/Plug-Ins/VST3/LoopTape.vst3 /
 ## Features
 
 **Tape Echo**
-- 20 ms – 2,5 s oder **Tempo-Sync** zum Ableton-Tempo (1/32 bis 1/1, triolisch und punktiert)
+- 20 ms – 2,5 s frei oder **HOST**-Sync zum Ableton-Tempo (1/32 bis 1/1, triolisch und punktiert).
+  Unten im Echo-Bereich steht immer das aktuelle Host-Tempo und die resultierende Delay-Zeit, z. B. `HOST 120.0 BPM  1/4 = 500 ms`.
+  Tempoänderungen in Ableton (auch Automation) folgt das Delay sofort, mit Band-Glide.
 - Zeitänderungen gleiten wie ein Bandmotor (Pitch-Bend-Effekt statt Knacksen)
 - **Wow** (langsames, driftendes Leiern) und **Flutter** (schnelles Flattern)
 - **Saturation**: jede Wiederholung läuft durch den „Aufnahmekopf“ und wird wärmer und schmutziger
@@ -56,6 +58,8 @@ sudo xattr -dr com.apple.quarantine /Library/Audio/Plug-Ins/VST3/LoopTape.vst3 /
 - **Loop Length**: *Free*, auf *Beat* oder *Bar* gerundet (nach Ableton-Tempo). Endet die Aufnahme zu früh, nimmt der Looper bis zum nächsten Raster weiter auf.
 - **Reverse** und **1/2 Speed** (Oktave tiefer, doppelt so lang)
 - Klickfreie Übergänge (Fades an Loop-Naht, Punch-In/Out, Start/Stop, Undo)
+- **Export**: *EXPORT WAV* speichert den Loop als WAV (Mix aller aktiven Layer) oder **jeden Layer einzeln** plus Mix.
+  Oder einfach das Feld **LOOP INS SET ZIEHEN** packen und auf eine Audiospur in Ableton ziehen.
 
 ## Bedienung des Loopers
 
@@ -88,9 +92,22 @@ Alle Looper-Tasten gibt es auch als automatisierbare Parameter (*Looper Rec/Dub,
 In Ableton: Gerät aufklappen → **Konfigurieren** → Parameter anklicken → MIDI-Map-Modus (Cmd+M) → Taster/Fußschalter drücken.
 Ausgelöst wird bei der **steigenden Flanke** (Wert springt von 0 auf 1). Taster daher im Modus „Momentary“ verwenden.
 
+## Loop exportieren
+
+| Weg | Ergebnis |
+|---|---|
+| **LOOP INS SET ZIEHEN** (Drag & Drop) | Feld auf eine Audiospur oder in die Session-Ansicht ziehen. Die Datei wird dabei in `~/Musik/LoopTape/` gespeichert. |
+| **EXPORT WAV → Loop (Mix)** | eine WAV-Datei mit allen aktiven Layern, Speicherort frei wählbar |
+| **EXPORT WAV → Alle Layer einzeln** | `…_Mix.wav`, `…_Layer01.wav`, `…_Layer02.wav` … in einen Ordner: ideal, um die Schichten in Ableton einzeln weiterzumischen |
+
+- Format: WAV, 32-bit Float (kein Clipping, auch wenn die Layer zusammen lauter als 0 dB sind), Projekt-Samplerate, Stereo.
+- Exportiert wird der Loop exakt in Loop-Länge, vorwärts und in normaler Geschwindigkeit (Reverse/½ Speed sind Wiedergabe-Effekte).
+  Mit *Loop Length = Bar* passt die Datei taktgenau ins Set.
+- Der Dateiname enthält das Tempo (z. B. `LoopTape_120bpm_…`), damit Ableton richtig warpt.
+
 ## Hinweise
 
-- Der Loop-Inhalt wird **nicht** im Ableton-Set gespeichert (nur die Einstellungen). Zum Behalten: Return-Spur in eine Audiospur resampeln.
+- Der Loop-Inhalt wird **nicht** im Ableton-Set gespeichert (nur die Einstellungen). Zum Behalten vor dem Schließen exportieren (siehe oben).
 - Speicher: Pro Instanz werden ca. 23 MB (48 kHz) für den Basis-Loop reserviert, Overdub-Layer nach Bedarf in Loop-Länge.
 
 ## Selbst bauen

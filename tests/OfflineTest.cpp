@@ -146,6 +146,28 @@ int main()
                "dub starts once allocated");
     }
 
+    // ------------------------------------------------------------ export (copyLayer)
+    {
+        Rig rig; auto& lp = rig.lp;
+        lp.pressRecord(); rig.run (sec, [] (int i) { return sine (i, 220.0f); }); lp.pressRecord();
+        lp.pressRecord(); rig.run (sec, [] (int i) { return sine (i, 330.0f); }); lp.pressRecord();
+        rig.run (1000, [] (int) { return 0.f; });
+        lp.pressUndo();
+        // new half-length take into the reused layer 2 -> second half must export silent
+        lp.pressPlayStop(); rig.run (1000, [] (int) { return 0.f; }); lp.pressPlayStop();
+        lp.pressRecord(); rig.run (sec / 2, [] (int i) { return sine (i, 500.0f); }); lp.pressRecord();
+        rig.run (1000, [] (int) { return 0.f; });
+
+        std::vector<float> l0 ((size_t) sec), r0 ((size_t) sec), l1 ((size_t) sec), r1 ((size_t) sec);
+        CHECK (lp.copyLayer (0, l0.data(), r0.data()) && lp.copyLayer (1, l1.data(), r1.data()), "copyLayer works");
+        double e = 0; for (int i = 2000; i < sec - 2000; ++i) e = std::max (e, (double) std::abs (l0[(size_t) i] - sine (i, 220.0f)));
+        CHECK (e < 1e-4, "exported base layer == recording");
+        CHECK (std::abs (r0[5000] + l0[5000]) < 1e-6, "export keeps stereo channels");
+        CHECK (rms (l1, 2000, sec / 2 - 2000) > 0.2f, "exported layer 2 contains the new take");
+        CHECK (rms (l1, sec / 2 + 2000, sec - 1000) < 1e-6, "exported layer 2 has no stale audio from the undone take");
+        CHECK (! lp.copyLayer (5, l1.data(), r1.data()) || rms (l1, 0, sec) < 1e-6, "unused layer exports nothing");
+    }
+
     // ------------------------------------------------------------ quantize
     {
         Rig rig; auto& lp = rig.lp;

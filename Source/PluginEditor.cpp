@@ -286,13 +286,52 @@ void TapeDisplay::paint (juce::Graphics& g)
     }
 }
 
+//============================================================================ DragTile
+void DragTile::paint (juce::Graphics& g)
+{
+    auto r = getLocalBounds().toFloat().reduced (1.0f);
+    const bool on = isEnabled();
+    const bool hl = on && isMouseOver();
+    g.setColour (hl ? col::amber.withAlpha (0.16f) : col::dark);
+    g.fillRoundedRectangle (r, 7.0f);
+    const float dash[] = { 4.0f, 3.0f };
+    juce::Path outline; outline.addRoundedRectangle (r, 7.0f);
+    juce::Path dashed; juce::PathStrokeType (1.2f).createDashedStroke (dashed, outline, dash, 2);
+    g.setColour (on ? col::amber.withAlpha (hl ? 1.0f : 0.7f) : col::dim.withAlpha (0.4f));
+    g.fillPath (dashed);
+
+    // little waveform icon
+    auto icon = r.removeFromLeft (r.getHeight()).reduced (8.0f);
+    g.setColour (on ? col::amber : col::dim);
+    const float heights[] = { 0.35f, 0.8f, 0.55f, 1.0f, 0.45f, 0.7f };
+    const float bw = icon.getWidth() / 6.0f;
+    for (int i = 0; i < 6; ++i)
+    {
+        const float h = icon.getHeight() * heights[i];
+        g.fillRoundedRectangle (icon.getX() + bw * (float) i + 0.5f, icon.getCentreY() - h * 0.5f, bw - 1.5f, h, 1.0f);
+    }
+    g.setColour (on ? col::cream : col::dim);
+    g.setFont (juce::FontOptions (12.0f, juce::Font::bold));
+    g.drawText ("LOOP INS SET ZIEHEN", r.withTrimmedRight (8.0f), juce::Justification::centredLeft);
+}
+
+void DragTile::mouseDrag (const juce::MouseEvent& e)
+{
+    if (dragStarted || ! isEnabled() || e.getDistanceFromDragStart() < 6) return;
+    dragStarted = true;
+    const auto file = proc.renderToExportFolder();
+    if (! file.existsAsFile()) { if (onStatus) onStatus ("Kein Loop zum Ziehen"); return; }
+    if (onStatus) onStatus ("Gespeichert: " + file.getFileName());
+    juce::DragAndDropContainer::performExternalDragDropOfFiles ({ file.getFullPathName() }, false, this);
+}
+
 //============================================================================ Editor
 LoopTapeEditor::LoopTapeEditor (LoopTapeProcessor& p)
     : AudioProcessorEditor (&p), proc (p),
       time (p.apvts, "time", "Time"), feedback (p.apvts, "feedback", "Feedback"), mix (p.apvts, "mix", "Mix"),
       tone (p.apvts, "tone", "Tone"), lowCut (p.apvts, "lowCut", "Low Cut"), wow (p.apvts, "wow", "Wow"),
       flutter (p.apvts, "flutter", "Flutter"), saturation (p.apvts, "saturation", "Saturation"),
-      hiss (p.apvts, "hiss", "Hiss"), loopLevel (p.apvts, "loopLevel", "Loop Level"), display (p)
+      hiss (p.apvts, "hiss", "Hiss"), loopLevel (p.apvts, "loopLevel", "Loop Level"), display (p), dragTile (p)
 {
     setLookAndFeel (&lnf);
 
@@ -321,7 +360,25 @@ LoopTapeEditor::LoopTapeEditor (LoopTapeProcessor& p)
     reverseAtt = std::make_unique<ButtonAttachment> (proc.apvts, "reverse", reverseBtn);
     halfAtt    = std::make_unique<ButtonAttachment> (proc.apvts, "halfSpeed", halfBtn);
 
-    killDryBtn.setTooltip ("Removes the live dry signal - use on a Return track");
+    killDryBtn.setTooltip ("Entfernt das direkte Eingangssignal (fuer Return-Spuren)");
+    syncBtn.setTooltip ("Delay-Zeit folgt dem Ableton-Tempo (Notenwert unter DIVISION)");
+
+    hostInfo.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 12.0f, juce::Font::plain));
+    hostInfo.setColour (juce::Label::textColourId, col::cream.withAlpha (0.8f));
+    hostInfo.setJustificationType (juce::Justification::centredRight);
+    addAndMakeVisible (hostInfo);
+
+    exportBtn.setColour (juce::TextButton::buttonColourId, col::panelHi);
+    exportBtn.setTooltip ("Loop als WAV speichern (Mix oder alle Layer einzeln)");
+    exportBtn.onClick = [this] { showExportMenu(); };
+    addAndMakeVisible (exportBtn);
+    dragTile.setTooltip ("Ziehen und auf eine Audiospur in Ableton fallen lassen");
+    dragTile.onStatus = [this] (const juce::String& t) { setStatus (t); };
+    addAndMakeVisible (dragTile);
+    exportStatus.setFont (juce::FontOptions (11.0f));
+    exportStatus.setColour (juce::Label::textColourId, col::amber);
+    exportStatus.setJustificationType (juce::Justification::centredRight);
+    addAndMakeVisible (exportStatus);
 
     recBtn.setColour (juce::TextButton::buttonColourId, col::red.darker (0.25f));
     playBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff3d5a3a));
@@ -336,7 +393,7 @@ LoopTapeEditor::LoopTapeEditor (LoopTapeProcessor& p)
 
     addAndMakeVisible (display);
 
-    setSize (980, 520);
+    setSize (980, 566);
     startTimerHz (30);
 }
 
@@ -354,6 +411,22 @@ void LoopTapeEditor::timerCallback()
     time.slider.setEnabled (! sync);
     divisionBox.setEnabled (sync);
 
+    {
+        const double bpm = proc.info.hostBpm.load();
+        const float ms = proc.info.delayMs.load();
+        const auto msText = ms >= 1000.0f ? juce::String (ms / 1000.0f, 2) + " s" : juce::String (juce::roundToInt (ms)) + " ms";
+        const auto bpmText = proc.info.hostBpmKnown.load() ? juce::String (bpm, 1) + " BPM" : juce::String ("kein Tempo");
+        hostInfo.setText (sync ? "HOST " + bpmText + "  " + divisionBox.getText() + " = " + msText
+                               : "FREI " + msText + "   (Host " + bpmText + ")",
+                          juce::dontSendNotification);
+        hostInfo.setColour (juce::Label::textColourId, sync ? col::amber : col::cream.withAlpha (0.6f));
+    }
+
+    const bool hasLoop = proc.info.loopSeconds.load() > 0.0;
+    exportBtn.setEnabled (hasLoop);
+    if (dragTile.isEnabled() != hasLoop) { dragTile.setEnabled (hasLoop); dragTile.repaint(); }
+    if (statusTicks > 0 && --statusTicks == 0) exportStatus.setText ({}, juce::dontSendNotification);
+
     using S = lt::Looper::State;
     const auto st = (S) proc.info.state.load();
     switch (st)
@@ -368,6 +441,57 @@ void LoopTapeEditor::timerCallback()
     undoBtn.setEnabled (st != S::Empty);
     redoBtn.setEnabled (proc.info.stored.load() > proc.info.layers.load());
     clearBtn.setEnabled (st != S::Empty);
+}
+
+void LoopTapeEditor::setStatus (const juce::String& text)
+{
+    exportStatus.setText (text, juce::dontSendNotification);
+    statusTicks = 30 * 6;
+}
+
+void LoopTapeEditor::showExportMenu()
+{
+    juce::PopupMenu m;
+    m.addItem (1, "Loop (Mix) als WAV speichern...");
+    m.addItem (2, "Alle Layer einzeln + Mix speichern...");
+    m.addSeparator();
+    m.addItem (3, "Export-Ordner im Finder zeigen");
+
+    m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&exportBtn), [this] (int choice) {
+        auto folder = LoopTapeProcessor::defaultExportFolder();
+        folder.createDirectory();
+
+        if (choice == 1)
+        {
+            chooser = std::make_unique<juce::FileChooser> ("Loop als WAV speichern",
+                                                           folder.getChildFile (proc.suggestedFileName ("Mix")), "*.wav");
+            chooser->launchAsync (juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles
+                                      | juce::FileBrowserComponent::warnAboutOverwriting,
+                                  [this] (const juce::FileChooser& fc) {
+                                      auto f = fc.getResult();
+                                      if (f == juce::File()) return;
+                                      if (! f.hasFileExtension ("wav")) f = f.withFileExtension ("wav");
+                                      const auto res = proc.writeWav (f, -1);
+                                      setStatus (res.wasOk() ? "Gespeichert: " + f.getFileName() : res.getErrorMessage());
+                                  });
+        }
+        else if (choice == 2)
+        {
+            chooser = std::make_unique<juce::FileChooser> ("Ordner fuer die Layer waehlen", folder);
+            chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectDirectories,
+                                  [this] (const juce::FileChooser& fc) {
+                                      const auto dir = fc.getResult();
+                                      if (dir == juce::File()) return;
+                                      const int n = proc.writeAllLayers (dir);
+                                      setStatus (n > 0 ? juce::String (n) + " Dateien gespeichert in " + dir.getFileName()
+                                                       : juce::String ("Kein Loop vorhanden"));
+                                  });
+        }
+        else if (choice == 3)
+        {
+            folder.revealToUser();
+        }
+    });
 }
 
 void LoopTapeEditor::paint (juce::Graphics& g)
@@ -411,13 +535,13 @@ void LoopTapeEditor::resized()
     // ---------- echo panel
     {
         auto a = echoPanel.reduced (14);
-        a.removeFromTop (22);
+        a.removeFromTop (34);
         const int kw = a.getWidth() / 5;
         auto row1 = a.removeFromTop (150);
         for (auto* k : { &time, &feedback, &mix, &tone, &lowCut })
             k->setBounds (row1.removeFromLeft (kw).reduced (4, 6));
 
-        a.removeFromTop (8);
+        a.removeFromTop (20);
         auto row2 = a.removeFromTop (150);
         for (auto* k : { &wow, &flutter, &saturation, &hiss })
             k->setBounds (row2.removeFromLeft (kw).reduced (4, 6));
@@ -431,9 +555,10 @@ void LoopTapeEditor::resized()
         modeLbl.setBounds (ctl.removeFromTop (14));
         modeBox.setBounds (ctl.removeFromTop (24));
 
-        a.removeFromTop (6);
-        auto bottom = a.removeFromTop (30);
+        auto bottom = a.removeFromBottom (30);
         killDryBtn.setBounds (bottom.removeFromLeft (130));
+        bottom.removeFromLeft (10);
+        hostInfo.setBounds (bottom.reduced (4, 0));
     }
 
     // ---------- looper panel
@@ -450,6 +575,12 @@ void LoopTapeEditor::resized()
         undoBtn.setBounds (transport.removeFromLeft (sw).reduced (3, 9));
         redoBtn.setBounds (transport.removeFromLeft (sw).reduced (3, 9));
         clearBtn.setBounds (transport.reduced (3, 9));
+
+        auto exportRow = a.removeFromBottom (36);
+        exportBtn.setBounds (exportRow.removeFromLeft (132).reduced (3));
+        dragTile.setBounds (exportRow.removeFromLeft (200).reduced (3));
+        exportStatus.setBounds (exportRow.reduced (4, 0));
+        a.removeFromBottom (8);
 
         a.removeFromTop (10);
         auto lower = a;

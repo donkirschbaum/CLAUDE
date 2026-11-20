@@ -41,6 +41,23 @@ private:
     int blink = 0;
 };
 
+// Drag the loop straight into an Ableton track (renders a WAV first)
+class DragTile : public juce::Component, public juce::SettableTooltipClient
+{
+public:
+    explicit DragTile (LoopTapeProcessor& p) : proc (p) { setMouseCursor (juce::MouseCursor::DraggingHandCursor); }
+    void paint (juce::Graphics&) override;
+    void mouseDrag (const juce::MouseEvent&) override;
+    void mouseUp (const juce::MouseEvent&) override { dragStarted = false; }
+    void mouseEnter (const juce::MouseEvent&) override { repaint(); }
+    void mouseExit (const juce::MouseEvent&) override { repaint(); }
+    std::function<void (const juce::String&)> onStatus;
+
+private:
+    LoopTapeProcessor& proc;
+    bool dragStarted = false;
+};
+
 class LoopTapeEditor : public juce::AudioProcessorEditor, private juce::Timer
 {
 public:
@@ -61,7 +78,7 @@ private:
 
     Knob time, feedback, mix, tone, lowCut, wow, flutter, saturation, hiss, loopLevel;
 
-    juce::ToggleButton syncBtn { "SYNC" }, killDryBtn { "KILL DRY" }, reverseBtn { "REVERSE" }, halfBtn { "1/2 SPEED" };
+    juce::ToggleButton syncBtn { "HOST" }, killDryBtn { "KILL DRY" }, reverseBtn { "REVERSE" }, halfBtn { "1/2 SPEED" };
     juce::ComboBox divisionBox, modeBox, routingBox, quantizeBox;
     juce::Label divisionLbl, modeLbl, routingLbl, quantizeLbl;
 
@@ -71,6 +88,16 @@ private:
     juce::TextButton recBtn { "REC" }, playBtn { "PLAY" }, undoBtn { "UNDO" }, redoBtn { "REDO" }, clearBtn { "CLEAR" };
 
     TapeDisplay display;
+
+    juce::Label hostInfo, exportStatus;
+    juce::TextButton exportBtn { "EXPORT WAV" };
+    DragTile dragTile;
+    std::unique_ptr<juce::FileChooser> chooser;
+    juce::TooltipWindow tooltips { this, 600 };
+    int statusTicks = 0;
+
+    void showExportMenu();
+    void setStatus (const juce::String& text);
 
     juce::Rectangle<int> echoPanel, loopPanel;
 

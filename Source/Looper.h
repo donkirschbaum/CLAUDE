@@ -244,6 +244,25 @@ public:
         advance();
     }
 
+    //================================================================= export
+    // Message thread. Copies layer k (forward, normal speed, unwritten parts
+    // silent) into outL/outR, which must hold getLoopLength() samples.
+    bool copyLayer (int k, float* outL, float* outR) const
+    {
+        const int64_t len = loopLen;
+        if (len <= 0 || k < 0 || k >= kMaxLayers) return false;
+        if (k > 0 && ! extrasReady()) return false;
+        const Layer& L = layers[k];
+        if ((int64_t) L.data[0].size() < len) return false;
+        for (int64_t i = 0; i < len; ++i)
+        {
+            const bool w = isWritten (L, i);
+            outL[i] = w ? L.data[0][(size_t) i] : 0.0f;
+            outR[i] = w ? L.data[1][(size_t) i] : 0.0f;
+        }
+        return true;
+    }
+
     //=================================================================== info
     State   getState() const      { return state; }
     int     getNumLayers() const  { return numLayers; }
