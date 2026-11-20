@@ -49,6 +49,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout FundstueckProcessor::createL
     auto pct = AudioParameterFloatAttributes().withStringFromValueFunction ([] (float v, int) { return String (roundToInt (v)) + " %"; });
     p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { "bpm", 1 }, "Tempo (intern)", NormalisableRange<float> (60.f, 170.f, 1.f), 90.f,
         AudioParameterFloatAttributes().withStringFromValueFunction ([] (float v, int) { return String (roundToInt (v)) + " BPM"; })));
+    p.push_back (std::make_unique<AudioParameterBool> (ParameterID { "sync", 1 }, "Host-Sync", false));
     p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { "swing", 1 }, "Swing", NormalisableRange<float> (50.f, 75.f, 1.f), 58.f, pct));
     p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { "feel", 1 }, "Feel", NormalisableRange<float> (0.f, 100.f, 1.f), 30.f, pct));
     p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { "rev", 1 }, "Raum", NormalisableRange<float> (0.f, 100.f, 1.f), 20.f, pct));
@@ -71,7 +72,10 @@ juce::AudioProcessorValueTreeState::ParameterLayout FundstueckProcessor::createL
 }
 
 FundstueckProcessor::FundstueckProcessor()
-    : AudioProcessor (BusesProperties().withOutput ("Output", juce::AudioChannelSet::stereo(), true)),
+    : AudioProcessor (BusesProperties()
+                          .withInput ("Eingang", juce::AudioChannelSet::stereo(), true)
+                          .withInput ("Sidechain", juce::AudioChannelSet::stereo(), true)
+                          .withOutput ("Output", juce::AudioChannelSet::stereo(), true)),
       apvts (*this, nullptr, "PARAMS", createLayout())
 {
     for (int l = 0; l < kLanes; ++l)
@@ -88,13 +92,17 @@ FundstueckProcessor::FundstueckProcessor()
     pFeel = apvts.getRawParameterValue ("feel"); pRev = apvts.getRawParameterValue ("rev");
     pTape = apvts.getRawParameterValue ("tape"); pSub = apvts.getRawParameterValue ("sub");
     pMaster = apvts.getRawParameterValue ("master");
+    pSync = apvts.getRawParameterValue ("sync");
     loadDemo();
 }
 
 bool FundstueckProcessor::isBusesLayoutSupported (const BusesLayout& l) const
 {
     const auto o = l.getMainOutputChannelSet();
-    return o == juce::AudioChannelSet::stereo() || o == juce::AudioChannelSet::mono();
+    if (o != juce::AudioChannelSet::stereo() && o != juce::AudioChannelSet::mono()) return false;
+    for (auto& in : l.inputBuses)
+        if (! in.isDisabled() && in != juce::AudioChannelSet::mono() && in != juce::AudioChannelSet::stereo()) return false;
+    return true;
 }
 
 void FundstueckProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
@@ -258,6 +266,31 @@ void FundstueckProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
 {
     juce::ScopedNoDenormals noDenormals;
     const int N = buffer.getNumSamples();
+
+    // Eingaenge (Haupt + Sidechain) zu Mono summieren: Pegel + Aufnahme
+    {
+        float pk = 0.0f;
+        const bool rec = recording.load();
+        int pos = recPos.load();
+        const int cap = (int) recBuf.size();
+        int nIn = 0;
+        for (int b = 0; b < getBusCount (true); ++b)
+            if (auto* bus = getBus (true, b); bus != nullptr && bus->isEnabled()) nIn += bus->getNumberOfChannels();
+        nIn = juce::jmin (nIn, buffer.getNumChannels());
+        if (nIn > 0)
+        {
+            for (int n = 0; n < N; ++n)
+            {
+                float x = 0.0f;
+                for (int c = 0; c < nIn; ++c) x += buffer.getSample (c, n);
+                x /= (float) juce::jmin (nIn, 2);
+                pk = juce::jmax (pk, std::abs (x));
+                if (rec && pos < cap) recBuf[(size_t) pos++] = x;
+            }
+            if (rec) { recPos = pos; if (pos >= cap) { recording = false; recFull = true; } }
+        }
+        inLevel = juce::jmax (pk, inLevel.load() * 0.85f);
+    }
     buffer.clear();
     if ((int) mix.size() < N) mix.resize ((size_t) N * 2);
     std::fill (mix.begin(), mix.begin() + N, 0.0f);
@@ -283,21 +316,26 @@ void FundstueckProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
     }
 
     // Transport
-    bool hp = false; double ppq = 0, bpm = pBpm->load();
+    const bool sync = pSync->load() > 0.5f;
+    syncOn = sync;
+    bool hp = false; double ppq = 0, bpm = pBpm->load(), hb = 0.0;
     if (auto* ph = getPlayHead())
         if (auto pos = ph->getPosition())
         {
             hp = pos->getIsPlaying();
-            if (hp) { if (auto b = pos->getBpm()) bpm = *b; }
+            if (auto b = pos->getBpm()) hb = *b;
             if (auto p = pos->getPpqPosition()) ppq = *p;
         }
+    hostBpm = hb;
+    if (! sync) hp = false;            // ohne Sync: Host-Transport ignorieren
+    else if (hb > 0) bpm = hb;         // mit Sync: Tempo vom Host
     hostPlaying = hp;
     bpm = juce::jlimit (20.0, 400.0, bpm);
     curBpm = bpm;
 
     bool run = false; double ppqStart = 0;
     if (hp) { run = true; ppqStart = ppq; wasInternal = false; }
-    else if (internalPlay.load())
+    else if (! sync && internalPlay.load())
     {
         if (! wasInternal) { internalPpq = 0; wasInternal = true; expectedPpq = -1; }
         run = true; ppqStart = internalPpq;
@@ -445,6 +483,45 @@ bool FundstueckProcessor::loadFiles (const juce::StringArray& paths)
     sourceLabel = loaded == 1 ? juce::File (paths[0]).getFileName() : juce::String (loaded) + " Dateien";
     reanalyze (Mode::Fresh);
     return true;
+}
+
+void FundstueckProcessor::startRecording()
+{
+    if (recording.load()) return;
+    const size_t need = (size_t) (120.0 * juce::jmax (sr, 44100.0));
+    if (recBuf.size() < need) recBuf.assign (need, 0.0f);   // nur wachsen, nie waehrend der Aufnahme
+    recFull = false;
+    recPos = 0;
+    recording = true;
+    statusText = juce::String (juce::CharPointer_UTF8 ("Nimmt auf\xe2\x80\xa6 klopf, klapper, summ!"));
+    bump();
+}
+
+void FundstueckProcessor::stopRecording()
+{
+    recording = false;
+    recFull = false;
+    const int n = juce::jmin (recPos.load(), (int) recBuf.size());
+    // Stille am Anfang/Ende abschneiden
+    float pk = 0; for (int i = 0; i < n; ++i) pk = juce::jmax (pk, std::abs (recBuf[(size_t) i]));
+    if (n < (int) (0.2 * sr) || pk < 1.0e-3f)
+    {
+        statusText = juce::String (juce::CharPointer_UTF8 ("Kein Signal aufgenommen \xe2\x80\x93 Eingang/Sidechain pr\xc3\xbc" "fen (siehe Pegel)."));
+        bump();
+        return;
+    }
+    const float thr = pk * 0.02f;
+    int a = 0, b = n;
+    while (a < n && std::abs (recBuf[(size_t) a]) < thr) ++a;
+    while (b > a && std::abs (recBuf[(size_t) b - 1]) < thr) --b;
+    a = juce::jmax (0, a - (int) (0.02 * sr));
+    b = juce::jmin (n, b + (int) (0.3 * sr));
+    std::vector<float> out (recBuf.begin() + a, recBuf.begin() + b);
+    for (auto& v : out) v /= pk;
+    source.swap (out);
+    sourceSR = sr;
+    sourceLabel = "Aufnahme";
+    reanalyze (Mode::Fresh);
 }
 
 void FundstueckProcessor::reanalyze (Mode mode)

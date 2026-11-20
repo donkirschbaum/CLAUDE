@@ -46,6 +46,7 @@ public:
     void mouseDown (const juce::MouseEvent&) override;
     void refresh();
 private:
+    void drawStatus (juce::Graphics&);
     FundstueckProcessor& proc; Content& content;
     std::vector<std::pair<float, float>> peaks;
 };
@@ -100,7 +101,13 @@ private:
     PlayButton play;
     juce::Slider bpm, swing, feel, rev, tape, sub, master, sens, dens;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> aBpm, aSwing, aFeel, aRev, aTape, aSub, aMaster;
-    juce::TextButton demoBtn, loadBtn, rollAll, rollDrums, rollMel, rollSounds, clearBtn;
+    juce::TextButton demoBtn, loadBtn, recBtn, syncBtn, rollAll, rollDrums, rollMel, rollSounds, clearBtn;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> aSync;
+    juce::Rectangle<int> meterR { 690, 82, 50, 20 };
+    float shownLevel = 0;
+    double shownHostBpm = -1;
+    bool seenSync = false, seenRec = false;
+    int seenRecTenths = -1;
     juce::OwnedArray<juce::TextButton> styleBtns;
     juce::ComboBox rootBox, scaleBox;
     OverviewView overview;

@@ -101,6 +101,17 @@ public:
     std::atomic<int> currentStep { -1 };
     std::atomic<int> uiVersion { 0 };
     std::atomic<double> curBpm { 90.0 };
+    std::atomic<double> hostBpm { 0.0 };     // 0 = Host liefert kein Tempo
+    std::atomic<bool> syncOn { false };
+
+    // Aufnahme vom Eingang (Standalone: Mikrofon, Ableton: Sidechain)
+    void startRecording();
+    void stopRecording();
+    std::atomic<bool> recording { false };
+    std::atomic<bool> recFull { false };
+    std::atomic<int> recPos { 0 };
+    std::atomic<float> inLevel { 0.0f };
+    double getRecSampleRate() const { return sr; }
 
 private:
     void pushEvent (const fs::Event& e);
@@ -131,7 +142,8 @@ private:
 
     std::atomic<float>* pBpm = nullptr; std::atomic<float>* pSwing = nullptr; std::atomic<float>* pFeel = nullptr;
     std::atomic<float>* pRev = nullptr; std::atomic<float>* pTape = nullptr; std::atomic<float>* pSub = nullptr;
-    std::atomic<float>* pMaster = nullptr;
+    std::atomic<float>* pMaster = nullptr; std::atomic<float>* pSync = nullptr;
+    std::vector<float> recBuf;
     std::atomic<float>* pVol[fs::kLanes] {}; std::atomic<float>* pTune[fs::kLanes] {};
     std::atomic<float>* pLen[fs::kLanes] {}; std::atomic<float>* pMute[fs::kLanes] {};
 

@@ -33,10 +33,25 @@ xattr -dr com.apple.quarantine ~/Library/Audio/Plug-Ins/VST3/Fundstueck.vst3 ~/L
 | **3 Sequencer** | 16 Schritte × 5 Spuren. Spurnamen anklicken → Schnipsel anklicken = Sound tauschen. ▲▼ blättert durch die Schnipsel. Hats: mehrfach klicken = Wirbel (2×/3×). Melodie: Mausrad, Shift-Klick (hoch), Rechtsklick (runter). |
 | **Kopfzeile** | Play (intern) · Tempo · Swing · Feel (menschliche Ungenauigkeit) · Raum · Tape · Sub-Kick · Master |
 
-- **Host-Sync:** Läuft deine DAW, folgt Fundstück automatisch ihrem Tempo und ihrer Position („SYNC“).
+- **Host-Sync:** Standardmäßig aus – Fundstück läuft dann mit eigenem Tempo über den Play-Knopf.
+  Mit **HOST-SYNC** an folgt es Tempo und Transport der DAW, die Tempo-Anzeige zeigt das Host-BPM.
 - **MIDI:** C1 (36) Kick · D1/E1 (38/40) Snare · F#1/G#1/A#1 (42/44/46) Hat · ungerade Töne 37–47 Perc · ab C2 (48) chromatisch die Melodie-Stimme.
 - Das Projekt speichert Aufnahme, Pattern und alle Einstellungen mit (bis 2 Minuten Audio).
-- Aufnehmen: Mit der Sprachmemos-App oder in der DAW aufnehmen und die Datei hineinziehen.
+
+## Direkt aufnehmen (● Aufnehmen)
+
+Der Knopf nimmt den Audio-Eingang des Plugins auf (max. 2 Minuten), Stille am Rand wird abgeschnitten,
+danach wird sofort analysiert. Die **IN**-Anzeige daneben zeigt, ob Signal ankommt.
+
+**Ableton Live** (Instrumente bekommen Audio nur über den Sidechain):
+1. Eine **Audiospur** anlegen, Eingang = dein Mikrofon, Monitor auf **In** stellen (oder Spur scharf schalten bei *Auto*).
+2. Im Fundstück-Gerät oben links das kleine Dreieck/**Sidechain**-Symbol aufklappen und bei *Audio From*
+   die Mikrofon-Spur wählen.
+3. In Fundstück auf **● Aufnehmen** – klopfen, klappern, summen – **■ Stopp**.
+
+**Logic:** Im Plugin-Fenster oben rechts *Side Chain* → Mikrofon-Spur oder Eingang wählen.
+**Eigenständige App:** nimmt direkt das Mikrofon auf (Eingang unter *Options → Audio/MIDI Settings*).
+Beim ersten Start fragt macOS nach der Mikrofon-Erlaubnis.
 
 ## Selbst bauen
 

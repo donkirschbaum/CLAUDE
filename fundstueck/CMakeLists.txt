@@ -32,6 +32,8 @@ juce_add_plugin(Fundstueck
     COPY_PLUGIN_AFTER_BUILD FALSE
     VST3_CATEGORIES Instrument Sampler Drum
     AU_MAIN_TYPE kAudioUnitType_MusicDevice
+    MICROPHONE_PERMISSION_ENABLED TRUE
+    MICROPHONE_PERMISSION_TEXT "Fundstueck nimmt Geraeusche ueber das Mikrofon auf."
     FORMATS ${FS_FORMATS})
 
 target_sources(Fundstueck PRIVATE
