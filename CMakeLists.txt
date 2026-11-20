@@ -29,7 +29,7 @@ endif()
 
 juce_add_plugin(LoopTape
     COMPANY_NAME "donkirschbaum"
-    COMPANY_WEBSITE "https://github.com/donkirschbaum/looptape"
+    COMPANY_WEBSITE "https://github.com/donkirschbaum/CLAUDE/tree/looptape"
     BUNDLE_ID "com.donkirschbaum.looptape"
     PLUGIN_MANUFACTURER_CODE Dkbm
     PLUGIN_CODE Ltp1

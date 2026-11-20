@@ -15,4 +15,4 @@ MANUELL
   danach im Terminal:
   xattr -dr com.apple.quarantine ~/Library/Audio/Plug-Ins/VST3/LoopTape.vst3 ~/Library/Audio/Plug-Ins/Components/LoopTape.component
 
-Anleitung & Quellcode: https://github.com/donkirschbaum/looptape
+Anleitung & Quellcode: https://github.com/donkirschbaum/CLAUDE/tree/looptape

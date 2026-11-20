@@ -10,7 +10,7 @@ Loop-Teppich.
 
 ## ⬇️ Download
 
-**[→ Neueste Version herunterladen (Releases)](https://github.com/donkirschbaum/looptape/releases/latest)**
+**[→ Neueste Version herunterladen (Releases)](https://github.com/donkirschbaum/CLAUDE/releases/tag/looptape-v1.0.0)**
 
 | Datei | Wofür |
 |---|---|
@@ -96,13 +96,13 @@ Ausgelöst wird bei der **steigenden Flanke** (Wert springt von 0 auf 1). Taster
 ## Selbst bauen
 
 ```bash
-git clone https://github.com/donkirschbaum/looptape.git && cd looptape
+git clone -b looptape https://github.com/donkirschbaum/CLAUDE.git looptape && cd looptape
 cmake -B build -G Xcode -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
 cmake --build build --config Release
 # Ergebnis: build/LoopTape_artefacts/Release/{VST3,AU}
 ```
 
-JUCE 8 wird automatisch heruntergeladen. Bei jedem Tag `v*` baut GitHub Actions das Release (inkl. DSP-Tests,
+JUCE 8 wird automatisch heruntergeladen. Bei jedem Tag `looptape-v*` baut GitHub Actions das Release (inkl. DSP-Tests,
 pluginval, auval).
 
 DSP-Tests ohne JUCE: `g++ -std=c++17 -O2 -ISource tests/OfflineTest.cpp -o t && ./t`
