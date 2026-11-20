@@ -27,7 +27,7 @@ public:
     enum class State : int { Empty = 0, Recording, Playing, Overdubbing, Stopped };
 
     static constexpr int   kMaxLayers  = 16;
-    static constexpr float kMaxSeconds = 60.0f;
+    static constexpr float kMaxSeconds = 120.0f; // 16 bars down to ~32 BPM
 
     //==================================================================== setup
     // not concurrent with processing (prepareToPlay)
@@ -69,7 +69,8 @@ public:
                 break;
 
             case State::Recording:
-                closeFirstRecording (State::Playing);
+                if (fixedTake) afterFirst = State::Playing; // fixed length closes itself
+                else closeFirstRecording (State::Playing);
                 break;
 
             case State::Playing:
@@ -144,6 +145,20 @@ public:
     }
 
     void setHalfSpeed (bool h) { rate = h ? 0.5 : 1.0; }
+
+    // > 0: the next first recording has exactly this length (bars mode)
+    void setFixedRecordLength (int64_t samples) { fixedLen = samples; }
+
+    // External clock (host sync): the playhead is set from outside every
+    // sample instead of advancing on its own.
+    void setExternalClock (bool on) { externalClock = on; }
+    void setExternalPosition (double p)
+    {
+        if (loopLen <= 0) return;
+        while (p >= (double) loopLen) p -= (double) loopLen;
+        while (p < 0.0) p += (double) loopLen;
+        pos = p;
+    }
 
     // length unit (samples) the base loop gets rounded to. 0 = free length
     void setQuantizeUnit (double samples) { quantUnit = samples; }
@@ -220,22 +235,33 @@ public:
         if (dubLayer >= 0)
         {
             rampRec();
-            const int64_t idx = (int64_t) pos;
+            const int64_t idx = std::min ((int64_t) pos, loopLen - 1);
             if (idx != lastWriteIdx)
             {
                 Layer& L = layers[dubLayer];
                 const float g = recGain;
-                if (isWritten (L, idx))
+                if (lastWriteIdx >= 0)
                 {
-                    L.data[0][(size_t) idx] += inL * g;
-                    L.data[1][(size_t) idx] += inR * g;
+                    // external clock faster than the recorded tempo: fill the
+                    // skipped samples so the take stays contiguous
+                    int64_t step = L.dir > 0 ? idx - lastWriteIdx : lastWriteIdx - idx;
+                    if (step < 0) step += loopLen;
+                    if (step > 64)
+                    {
+                        // playhead jumped (host relocated): close this take
+                        stopOverdub(); finalizeDub(); state = State::Playing;
+                        advance();
+                        return;
+                    }
+                    for (int64_t k = 1; k < step; ++k)
+                    {
+                        int64_t j = lastWriteIdx + L.dir * k;
+                        if (j >= loopLen) j -= loopLen;
+                        if (j < 0) j += loopLen;
+                        writeDub (L, j, inL * g, inR * g);
+                    }
                 }
-                else
-                {
-                    L.data[0][(size_t) idx] = inL * g;
-                    L.data[1][(size_t) idx] = inR * g;
-                    if (L.written < loopLen) ++L.written;
-                }
+                writeDub (L, idx, inL * g, inR * g);
                 lastWriteIdx = idx;
             }
             if (recTarget <= 0.0f && recGain <= 0.0f) finalizeDub();
@@ -273,6 +299,31 @@ public:
     double  getPosition() const   { return pos; }
     bool    isPendingDub() const  { return pendingDub; }
     bool    isClearing() const    { return clearing; }
+    bool    isFixedTake() const   { return fixedTake; }
+    int     getDirection() const  { return dir; }
+
+    // ------------------------------------------------ export helpers (static)
+    // One full playback cycle of a raw loop as heard at the given speed /
+    // direction (same interpolation as the live read()).
+    static int64_t playbackLength (int64_t len, double rate) { return (int64_t) std::llround ((double) len / rate); }
+
+    static void renderPlayback (const float* in, int64_t len, float* out, double rate, int direction)
+    {
+        const int64_t n = playbackLength (len, rate);
+        for (int64_t i = 0; i < n; ++i)
+        {
+            double p = (double) i * rate;
+            if (direction < 0) p = (double) (len - 1) - p;
+            while (p >= (double) len) p -= (double) len;
+            while (p < 0.0) p += (double) len;
+            const int64_t i0 = (int64_t) p;
+            const float frac = (float) (p - (double) i0);
+            int64_t i1 = i0 + direction;
+            if (i1 >= len) i1 -= len;
+            if (i1 < 0) i1 += len;
+            out[i] = in[i0] + (in[i1] - in[i0]) * frac;
+        }
+    }
     double  getSampleRate() const { return sr; }
 
 private:
@@ -283,6 +334,21 @@ private:
         int     dir = 1;     // playback direction during the take
         int64_t written = 0; // number of indices written so far in this take
     };
+
+    void writeDub (Layer& L, int64_t idx, float l, float r)
+    {
+        if (isWritten (L, idx))
+        {
+            L.data[0][(size_t) idx] += l;
+            L.data[1][(size_t) idx] += r;
+        }
+        else
+        {
+            L.data[0][(size_t) idx] = l;
+            L.data[1][(size_t) idx] = r;
+            if (L.written < loopLen) ++L.written;
+        }
+    }
 
     bool extrasReady() const
     {
@@ -308,6 +374,7 @@ private:
     void advance()
     {
         if (loopLen <= 0) return;
+        if (externalClock) return; // host drives the playhead
         if (state == State::Stopped && playGain <= 0.0f && ! clearing) return; // parked
         pos += rate * dir;
         while (pos >= (double) loopLen) pos -= (double) loopLen;
@@ -319,13 +386,16 @@ private:
         resetAll();
         state = State::Recording;
         recLen = 0;
-        recStopAt = 0;
+        fixedTake = fixedLen > 0;
+        recStopAt = fixedTake ? std::min (fixedLen, maxLen) : 0;
+        afterFirst = State::Playing;
         recGain = 1.0f; recTarget = 1.0f;
     }
 
     void closeFirstRecording (State after)
     {
         afterFirst = after;
+        if (fixedTake) return; // runs to its fixed length
         if (quantUnit > 1.0 && recLen > 0)
         {
             const double units = std::max (1.0, std::round ((double) recLen / quantUnit));
@@ -341,6 +411,7 @@ private:
         if (recLen < fadeLen * 2) { discardAll(); return; }
         loopLen = recLen;
         recStopAt = 0;
+        fixedTake = false;
 
         // fade the tail into the seam (head was faded on the way in)
         for (int i = 0; i < fadeLen; ++i)
@@ -429,7 +500,7 @@ private:
         dubLayer = -1; lastWriteIdx = -1;
         recGain = recTarget = 0.0f;
         playGain = playTarget = 1.0f;
-        pendingDub = false; clearing = false;
+        pendingDub = false; clearing = false; fixedTake = false;
         for (auto& g : layerGain) g = 0.0f;
         for (auto& L : layers) { L.written = 0; L.start = 0; }
     }
@@ -443,7 +514,8 @@ private:
     float layerGain[kMaxLayers] {};
 
     State state = State::Empty, afterFirst = State::Playing;
-    int64_t loopLen = 0, recLen = 0, recStopAt = 0;
+    int64_t loopLen = 0, recLen = 0, recStopAt = 0, fixedLen = 0;
+    bool fixedTake = false, externalClock = false;
     double pos = 0.0, rate = 1.0, quantUnit = 0.0;
     int dir = 1;
     int numLayers = 0, numStored = 0;

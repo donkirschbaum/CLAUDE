@@ -208,7 +208,8 @@ void TapeDisplay::paint (juce::Graphics& g)
     const juce::Point<float> c1 (reelArea.getX() + reelArea.getWidth() * 0.27f, reelArea.getCentreY());
     const juce::Point<float> c2 (reelArea.getX() + reelArea.getWidth() * 0.73f, reelArea.getCentreY());
     float frac = len > 0.0 ? (float) (posS / len) : 0.0f;
-    if (st == S::Recording) frac = (float) juce::jlimit (0.0, 1.0, recS / (double) lt::Looper::kMaxSeconds);
+    if (st == S::Recording)
+        frac = (float) juce::jlimit (0.0, 1.0, recTarget > 0.0 ? recS / recTarget : recS / (double) lt::Looper::kMaxSeconds);
 
     // tape path
     g.setColour (juce::Colour (0xff3a2a1e));
@@ -217,17 +218,29 @@ void TapeDisplay::paint (juce::Graphics& g)
     drawReel (g, c2, rr, reelAngle * 0.8f, frac);
 
     // state badge
+    const bool armed = proc.info.hostArmed.load();
+    const int fixedBars = proc.info.fixedBars.load();
+    const double barSec = proc.info.barSeconds.load();
     juce::String stText; juce::Colour stCol = col::dim;
     switch (st)
     {
-        case S::Empty:       stText = "EMPTY"; break;
-        case S::Recording:   stText = recTarget > 0.0 ? "REC > GRID" : "RECORDING"; stCol = col::red; break;
+        case S::Empty:
+            if (armed) { stText = proc.info.transportPlaying.load() ? "WARTET AUF TAKT" : "WARTET AUF PLAY"; stCol = col::red; }
+            else stText = "EMPTY";
+            break;
+        case S::Recording:
+            if (fixedBars > 0 && barSec > 0.0)
+                stText = "REC  TAKT " + juce::String (juce::jmin (fixedBars, (int) (recS / barSec) + 1)) + "/" + juce::String (fixedBars);
+            else
+                stText = recTarget > 0.0 ? "REC > TAKT" : "RECORDING";
+            stCol = col::red;
+            break;
         case S::Playing:     stText = pending ? "WAIT..." : "PLAYING"; stCol = col::green; break;
         case S::Overdubbing: stText = pending ? "WAIT..." : "OVERDUB"; stCol = col::amber; break;
         case S::Stopped:     stText = "STOPPED"; stCol = col::cream.withAlpha (0.7f); break;
     }
-    const bool lit = ! (st == S::Recording || st == S::Overdubbing) || blink < 20;
-    auto badge = juce::Rectangle<float> (reelArea.getCentreX() - 48.0f, reelArea.getY() + 2.0f, 96.0f, 20.0f);
+    const bool lit = ! (st == S::Recording || st == S::Overdubbing || armed) || blink < 20;
+    auto badge = juce::Rectangle<float> (reelArea.getCentreX() - 70.0f, reelArea.getY() + 2.0f, 140.0f, 20.0f);
     g.setColour (stCol.withAlpha (lit ? 0.22f : 0.08f));
     g.fillRoundedRectangle (badge, 4.0f);
     g.setColour (lit ? stCol : stCol.withAlpha (0.4f));
@@ -257,6 +270,9 @@ void TapeDisplay::paint (juce::Graphics& g)
     g.setColour (col::cream.withAlpha (0.85f));
     g.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 13.0f, juce::Font::plain));
     juce::String left = st == S::Recording ? fmt (recS) : (len > 0 ? fmt (posS) + " / " + fmt (len) : juce::String ("--"));
+    const double loopBars = proc.info.loopBars.load();
+    if (len > 0 && st != S::Recording && std::abs (loopBars - std::round (loopBars)) < 0.02)
+        left << "  " << juce::String ((int) std::round (loopBars)) << (std::round (loopBars) == 1.0 ? " TAKT" : " TAKTE");
     g.drawText (left, txt, juce::Justification::centredLeft);
     g.drawText ("LAYERS " + juce::String (layers) + "/" + juce::String (lt::Looper::kMaxLayers), txt, juce::Justification::centredRight);
 
@@ -349,23 +365,24 @@ LoopTapeEditor::LoopTapeEditor (LoopTapeProcessor& p)
         lbl.setColour (juce::Label::textColourId, col::cream.withAlpha (0.6f));
         addAndMakeVisible (lbl);
     };
-    setupCombo (divisionBox, divisionLbl, "DIVISION", "division", divisionAtt);
     setupCombo (modeBox, modeLbl, "STEREO", "mode", modeAtt);
     setupCombo (routingBox, routingLbl, "LOOP ROUTING", "routing", routingAtt);
-    setupCombo (quantizeBox, quantizeLbl, "LOOP LENGTH", "quantize", quantizeAtt);
+    setupCombo (barsBox, barsLbl, "TAKTE", "loopBars", barsAtt);
 
-    for (auto* b : { &syncBtn, &killDryBtn, &reverseBtn, &halfBtn }) addAndMakeVisible (*b);
-    syncAtt    = std::make_unique<ButtonAttachment> (proc.apvts, "sync", syncBtn);
+    for (auto* b : { &hostBtn, &killDryBtn, &reverseBtn, &halfBtn }) addAndMakeVisible (*b);
+    hostAtt    = std::make_unique<ButtonAttachment> (proc.apvts, "hostSync", hostBtn);
     killDryAtt = std::make_unique<ButtonAttachment> (proc.apvts, "killDry", killDryBtn);
     reverseAtt = std::make_unique<ButtonAttachment> (proc.apvts, "reverse", reverseBtn);
     halfAtt    = std::make_unique<ButtonAttachment> (proc.apvts, "halfSpeed", halfBtn);
 
     killDryBtn.setTooltip ("Entfernt das direkte Eingangssignal (fuer Return-Spuren)");
-    syncBtn.setTooltip ("Delay-Zeit folgt dem Ableton-Tempo (Notenwert unter DIVISION)");
+    hostBtn.setTooltip ("Looper laeuft synchron zu Ableton: Aufnahme startet auf dem naechsten Takt, "
+                        "Loop folgt Songposition, Tempo und Play/Stop");
+    barsBox.setTooltip ("Loop-Laenge in Takten. 'Frei' = Loop mit REC schliessen (mit HOST auf den naechsten Takt gerundet)");
 
     hostInfo.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 12.0f, juce::Font::plain));
     hostInfo.setColour (juce::Label::textColourId, col::cream.withAlpha (0.8f));
-    hostInfo.setJustificationType (juce::Justification::centredRight);
+    hostInfo.setJustificationType (juce::Justification::centredLeft);
     addAndMakeVisible (hostInfo);
 
     exportBtn.setColour (juce::TextButton::buttonColourId, col::panelHi);
@@ -378,6 +395,7 @@ LoopTapeEditor::LoopTapeEditor (LoopTapeProcessor& p)
     exportStatus.setFont (juce::FontOptions (11.0f));
     exportStatus.setColour (juce::Label::textColourId, col::amber);
     exportStatus.setJustificationType (juce::Justification::centredRight);
+    exportStatus.setMinimumHorizontalScale (0.7f);
     addAndMakeVisible (exportStatus);
 
     recBtn.setColour (juce::TextButton::buttonColourId, col::red.darker (0.25f));
@@ -393,7 +411,7 @@ LoopTapeEditor::LoopTapeEditor (LoopTapeProcessor& p)
 
     addAndMakeVisible (display);
 
-    setSize (980, 566);
+    setSize (980, 600);
     startTimerHz (30);
 }
 
@@ -407,19 +425,22 @@ void LoopTapeEditor::timerCallback()
 {
     display.tick();
 
-    const bool sync = syncBtn.getToggleState();
-    time.slider.setEnabled (! sync);
-    divisionBox.setEnabled (sync);
-
     {
         const double bpm = proc.info.hostBpm.load();
-        const float ms = proc.info.delayMs.load();
-        const auto msText = ms >= 1000.0f ? juce::String (ms / 1000.0f, 2) + " s" : juce::String (juce::roundToInt (ms)) + " ms";
-        const auto bpmText = proc.info.hostBpmKnown.load() ? juce::String (bpm, 1) + " BPM" : juce::String ("kein Tempo");
-        hostInfo.setText (sync ? "HOST " + bpmText + "  " + divisionBox.getText() + " = " + msText
-                               : "FREI " + msText + "   (Host " + bpmText + ")",
-                          juce::dontSendNotification);
-        hostInfo.setColour (juce::Label::textColourId, sync ? col::amber : col::cream.withAlpha (0.6f));
+        const auto sig = juce::String (proc.info.sigNum.load()) + "/" + juce::String (proc.info.sigDen.load());
+        juce::String t;
+        juce::Colour c = col::cream.withAlpha (0.6f);
+        if (proc.info.hostActive.load())
+        {
+            t = "HOST " + juce::String (bpm, 1) + " BPM  " + sig + (proc.info.transportPlaying.load() ? "" : "  (gestoppt)");
+            c = col::amber;
+        }
+        else if (proc.info.hostWanted.load())
+            t = "HOST: kein Host-Tempo, intern " + juce::String (bpm, 0) + " BPM";
+        else
+            t = "FREI  (" + juce::String (bpm, 1) + " BPM)";
+        hostInfo.setText (t, juce::dontSendNotification);
+        hostInfo.setColour (juce::Label::textColourId, c);
     }
 
     const bool hasLoop = proc.info.loopSeconds.load() > 0.0;
@@ -429,10 +450,11 @@ void LoopTapeEditor::timerCallback()
 
     using S = lt::Looper::State;
     const auto st = (S) proc.info.state.load();
+    const bool fixed = proc.info.fixedBars.load() > 0;
     switch (st)
     {
-        case S::Empty:       recBtn.setButtonText ("REC"); break;
-        case S::Recording:   recBtn.setButtonText ("PLAY / DUB"); break;
+        case S::Empty:       recBtn.setButtonText (proc.info.hostArmed.load() ? "ARMED" : "REC"); break;
+        case S::Recording:   recBtn.setButtonText (fixed ? "REC..." : "PLAY / DUB"); break;
         case S::Playing:
         case S::Stopped:     recBtn.setButtonText ("DUB"); break;
         case S::Overdubbing: recBtn.setButtonText ("END DUB"); break;
@@ -547,18 +569,12 @@ void LoopTapeEditor::resized()
             k->setBounds (row2.removeFromLeft (kw).reduced (4, 6));
 
         auto ctl = row2.reduced (4, 8);
-        syncBtn.setBounds (ctl.removeFromTop (26));
-        ctl.removeFromTop (4);
-        divisionLbl.setBounds (ctl.removeFromTop (14));
-        divisionBox.setBounds (ctl.removeFromTop (24));
-        ctl.removeFromTop (6);
+        ctl.removeFromTop (26);
         modeLbl.setBounds (ctl.removeFromTop (14));
         modeBox.setBounds (ctl.removeFromTop (24));
 
         auto bottom = a.removeFromBottom (30);
         killDryBtn.setBounds (bottom.removeFromLeft (130));
-        bottom.removeFromLeft (10);
-        hostInfo.setBounds (bottom.reduced (4, 0));
     }
 
     // ---------- looper panel
@@ -578,9 +594,12 @@ void LoopTapeEditor::resized()
 
         auto exportRow = a.removeFromBottom (36);
         exportBtn.setBounds (exportRow.removeFromLeft (132).reduced (3));
-        dragTile.setBounds (exportRow.removeFromLeft (200).reduced (3));
-        exportStatus.setBounds (exportRow.reduced (4, 0));
-        a.removeFromBottom (8);
+        dragTile.setBounds (exportRow.removeFromLeft (220).reduced (3));
+        a.removeFromBottom (4);
+        auto infoRow = a.removeFromBottom (20);
+        hostInfo.setBounds (infoRow.removeFromLeft (230).reduced (3, 0));
+        exportStatus.setBounds (infoRow.reduced (3, 0));
+        a.removeFromBottom (4);
 
         a.removeFromTop (10);
         auto lower = a;
@@ -589,14 +608,16 @@ void LoopTapeEditor::resized()
 
         auto col1 = lower.removeFromLeft (lower.getWidth() / 2).reduced (4, 4);
         auto col2 = lower.reduced (4, 4);
-        routingLbl.setBounds (col1.removeFromTop (14));
-        routingBox.setBounds (col1.removeFromTop (26));
-        col1.removeFromTop (10);
-        reverseBtn.setBounds (col1.removeFromTop (28));
+        barsLbl.setBounds (col1.removeFromTop (14));
+        barsBox.setBounds (col1.removeFromTop (26));
+        col1.removeFromTop (8);
+        hostBtn.setBounds (col1.removeFromTop (28));
 
-        quantizeLbl.setBounds (col2.removeFromTop (14));
-        quantizeBox.setBounds (col2.removeFromTop (26));
-        col2.removeFromTop (10);
+        routingLbl.setBounds (col2.removeFromTop (14));
+        routingBox.setBounds (col2.removeFromTop (26));
+        col2.removeFromTop (8);
+        reverseBtn.setBounds (col2.removeFromTop (28));
+        col2.removeFromTop (6);
         halfBtn.setBounds (col2.removeFromTop (28));
     }
 }

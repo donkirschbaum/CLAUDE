@@ -30,6 +30,13 @@ jobs:
       - name: DSP tests
         run: ./build/Release/looptape_test
 
+      - name: Host sync test (simulated Ableton transport)
+        continue-on-error: true
+        run: |
+          T=$(find build -type f -perm -u+x -path "*looptape_hosttest_artefacts*" -name "*ost*est*" | head -1)
+          echo "running $T"
+          "$T"
+
       - name: Ad-hoc code signing
         run: |
           codesign --force --deep --sign - "$ARTEFACTS/VST3/LoopTape.vst3"

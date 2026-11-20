@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.22)
 
 set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "Minimum macOS version")
-project(LoopTape VERSION 1.1.0 LANGUAGES C CXX)
+project(LoopTape VERSION 1.2.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -67,4 +67,12 @@ target_link_libraries(LoopTape
 if(LOOPTAPE_BUILD_TESTS)
     add_executable(looptape_test tests/OfflineTest.cpp)
     target_include_directories(looptape_test PRIVATE Source)
+
+    # the real processor driven by a simulated host transport
+    juce_add_console_app(looptape_hosttest PRODUCT_NAME "LoopTapeHostTest")
+    target_sources(looptape_hosttest PRIVATE tests/HostSyncTest.cpp Source/PluginProcessor.cpp Source/PluginEditor.cpp)
+    target_compile_definitions(looptape_hosttest PRIVATE
+        JucePlugin_Name="LoopTape" JucePlugin_VersionString="${PROJECT_VERSION}"
+        JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
+    target_link_libraries(looptape_hosttest PRIVATE juce::juce_audio_utils juce::juce_recommended_config_flags)
 endif()

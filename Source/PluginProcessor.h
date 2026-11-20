@@ -57,12 +57,20 @@ public:
         std::atomic<float> outLevel { 0.0f };
         std::atomic<double> hostBpm { 120.0 };
         std::atomic<bool> hostBpmKnown { false };
-        std::atomic<float> delayMs { 400.0f };
+        std::atomic<bool> hostWanted { true }, hostActive { false }, hostArmed { false }, transportPlaying { false };
+        std::atomic<int> sigNum { 4 }, sigDen { 4 }, fixedBars { 4 };
+        std::atomic<double> barSeconds { 2.0 }, loopBars { 0.0 };
     } info;
 
+    static const juce::StringArray& barChoices();
+    static int barsForChoice (int index); // 0 = free
+
     // ---- export (message thread)
-    // layer = -1: mix of all active layers, otherwise a single layer
+    // raw layer data (forward, normal speed). layer = -1: mix of active layers
     bool renderLoop (juce::AudioBuffer<float>& out, int layer);
+    // what the looper actually outputs: speed, direction, loop level and, in
+    // "Feed Delay" routing, the echoes of the loop (seamless, steady state)
+    bool renderOutput (juce::AudioBuffer<float>& out, int layer);
     juce::Result writeWav (const juce::File& file, int layer);
     // writes every active layer + the mix into a folder, returns number of files
     int writeAllLayers (const juce::File& folder);
@@ -74,12 +82,12 @@ public:
     juce::AudioProcessorValueTreeState apvts;
     static juce::AudioProcessorValueTreeState::ParameterLayout createLayout();
 
-    static const juce::StringArray& divisionNames();
+    void timerCallbackForTest() { timerCallback(); }
 
 private:
     void timerCallback() override { looper.allocateExtraLayers(); }
     void handleTriggers (uint32_t& cmds);
-    float divisionBeats (int index) const;
+    lt::TapeDelay::Params makeDelayParams() const;
 
     lt::TapeDelay delay;
     lt::Looper looper;
@@ -91,16 +99,26 @@ private:
     juce::SmoothedValue<float> dryGainSm, wetGainSm, loopGainSm;
     float levelFollower = 0.0f;
 
+    // host sync state (audio thread)
+    bool hostArmed = false;          // waiting for the next bar line to start recording
+    double armPrevFrac = -1.0;
+    double hostLoopQuarters = 0.0;   // loop length in quarter notes (0 = not locked yet)
+    double hostStartPpq = 0.0;       // ppq of the loop's first sample
+    bool hostStartValid = false;
+    int64_t lastLoopLen = 0;
+    float transportGain = 1.0f;
+    double currentSR = 44100.0;
+
     // cached parameter pointers
-    std::atomic<float>* pTime = nullptr;     std::atomic<float>* pSync = nullptr;
-    std::atomic<float>* pDivision = nullptr; std::atomic<float>* pFeedback = nullptr;
+    std::atomic<float>* pTime = nullptr;     std::atomic<float>* pHost = nullptr;
+    std::atomic<float>* pBars = nullptr;     std::atomic<float>* pFeedback = nullptr;
     std::atomic<float>* pMix = nullptr;      std::atomic<float>* pKillDry = nullptr;
     std::atomic<float>* pTone = nullptr;     std::atomic<float>* pLowCut = nullptr;
     std::atomic<float>* pWow = nullptr;      std::atomic<float>* pFlutter = nullptr;
     std::atomic<float>* pSat = nullptr;      std::atomic<float>* pHiss = nullptr;
     std::atomic<float>* pMode = nullptr;
     std::atomic<float>* pLoopLevel = nullptr; std::atomic<float>* pRouting = nullptr;
-    std::atomic<float>* pQuantize = nullptr;  std::atomic<float>* pReverse = nullptr;
+    std::atomic<float>* pReverse = nullptr;
     std::atomic<float>* pHalf = nullptr;
     std::atomic<float>* pTrig[5] {};
 

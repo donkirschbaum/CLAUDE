@@ -78,12 +78,12 @@ private:
 
     Knob time, feedback, mix, tone, lowCut, wow, flutter, saturation, hiss, loopLevel;
 
-    juce::ToggleButton syncBtn { "HOST" }, killDryBtn { "KILL DRY" }, reverseBtn { "REVERSE" }, halfBtn { "1/2 SPEED" };
-    juce::ComboBox divisionBox, modeBox, routingBox, quantizeBox;
-    juce::Label divisionLbl, modeLbl, routingLbl, quantizeLbl;
+    juce::ToggleButton hostBtn { "HOST" }, killDryBtn { "KILL DRY" }, reverseBtn { "REVERSE" }, halfBtn { "1/2 SPEED" };
+    juce::ComboBox modeBox, routingBox, barsBox;
+    juce::Label modeLbl, routingLbl, barsLbl;
 
-    std::unique_ptr<ButtonAttachment> syncAtt, killDryAtt, reverseAtt, halfAtt;
-    std::unique_ptr<ComboAttachment> divisionAtt, modeAtt, routingAtt, quantizeAtt;
+    std::unique_ptr<ButtonAttachment> hostAtt, killDryAtt, reverseAtt, halfAtt;
+    std::unique_ptr<ComboAttachment> modeAtt, routingAtt, barsAtt;
 
     juce::TextButton recBtn { "REC" }, playBtn { "PLAY" }, undoBtn { "UNDO" }, redoBtn { "REDO" }, clearBtn { "CLEAR" };
 

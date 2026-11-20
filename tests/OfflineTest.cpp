@@ -168,6 +168,49 @@ int main()
         CHECK (! lp.copyLayer (5, l1.data(), r1.data()) || rms (l1, 0, sec) < 1e-6, "unused layer exports nothing");
     }
 
+    // ------------------------------------------------------------ fixed length (bars)
+    {
+        Rig rig; auto& lp = rig.lp;
+        lp.setFixedRecordLength ((int64_t) (SR * 2));
+        lp.pressRecord(); rig.run (sec, [] (int) { return 0.1f; });
+        lp.pressRecord(); // must not close early
+        CHECK (lp.getState() == Looper::State::Recording, "fixed take ignores early REC");
+        rig.run (sec + 10, [] (int) { return 0.1f; });
+        CHECK (lp.getState() == Looper::State::Playing && lp.getLoopLength() == (int64_t) (SR * 2), "fixed take closes at exact length");
+    }
+
+    // ------------------------------------------------------------ external clock: gaps filled
+    {
+        Rig rig; auto& lp = rig.lp;
+        lp.pressRecord(); rig.run (sec, [] (int) { return 0.0f; }); lp.pressRecord();
+        lp.setExternalClock (true);
+        lp.pressRecord(); // overdub, playhead driven at 1.37x speed
+        double p = lp.getPosition();
+        for (int i = 0; i < sec; ++i)
+        {
+            p += 1.37; lp.setExternalPosition (p);
+            float l, r; lp.read (l, r); lp.writeAndAdvance (0.3f, 0.3f);
+            if (i % 512 == 0) lp.allocateExtraLayers();
+        }
+        lp.pressRecord();
+        for (int i = 0; i < 2000; ++i) { p += 1.37; lp.setExternalPosition (p); float l, r; lp.read (l, r); lp.writeAndAdvance (0.f, 0.f); }
+        std::vector<float> l1 ((size_t) sec), r1 ((size_t) sec);
+        lp.copyLayer (1, l1.data(), r1.data());
+        int holes = 0; for (int i = 0; i < sec; ++i) holes += std::abs (l1[(size_t) i]) < 1e-6 ? 1 : 0;
+        CHECK (holes < 900, "faster external clock leaves no holes in the take");
+        std::printf ("      silent samples: %d\n", holes);
+    }
+
+    // ------------------------------------------------------------ export render helper
+    {
+        std::vector<float> in (1000); for (int i = 0; i < 1000; ++i) in[(size_t) i] = (float) i;
+        std::vector<float> h ((size_t) Looper::playbackLength (1000, 0.5)), rv (1000);
+        Looper::renderPlayback (in.data(), 1000, h.data(), 0.5, 1);
+        Looper::renderPlayback (in.data(), 1000, rv.data(), 1.0, -1);
+        CHECK (h.size() == 2000 && std::abs (h[401] - 200.5f) < 1e-4, "renderPlayback half speed");
+        CHECK (std::abs (rv[0] - 999.0f) < 1e-4 && std::abs (rv[999] - 0.0f) < 1e-4, "renderPlayback reverse");
+    }
+
     // ------------------------------------------------------------ quantize
     {
         Rig rig; auto& lp = rig.lp;

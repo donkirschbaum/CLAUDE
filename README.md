@@ -10,7 +10,7 @@ Loop-Teppich.
 
 ## ⬇️ Download
 
-**[→ Neueste Version herunterladen (Releases)](https://github.com/donkirschbaum/CLAUDE/releases/tag/looptape-v1.1.0)**
+**[→ Neueste Version herunterladen (Releases)](https://github.com/donkirschbaum/CLAUDE/releases/tag/looptape-v1.2.0)**
 
 | Datei | Wofür |
 |---|---|
@@ -37,9 +37,7 @@ sudo xattr -dr com.apple.quarantine /Library/Audio/Plug-Ins/VST3/LoopTape.vst3 /
 ## Features
 
 **Tape Echo**
-- 20 ms – 2,5 s frei oder **HOST**-Sync zum Ableton-Tempo (1/32 bis 1/1, triolisch und punktiert).
-  Unten im Echo-Bereich steht immer das aktuelle Host-Tempo und die resultierende Delay-Zeit, z. B. `HOST 120.0 BPM  1/4 = 500 ms`.
-  Tempoänderungen in Ableton (auch Automation) folgt das Delay sofort, mit Band-Glide.
+- Delay-Zeit 20 ms – 2,5 s
 - Zeitänderungen gleiten wie ein Bandmotor (Pitch-Bend-Effekt statt Knacksen)
 - **Wow** (langsames, driftendes Leiern) und **Flutter** (schnelles Flattern)
 - **Saturation**: jede Wiederholung läuft durch den „Aufnahmekopf“ und wird wärmer und schmutziger
@@ -49,23 +47,41 @@ sudo xattr -dr com.apple.quarantine /Library/Audio/Plug-Ins/VST3/LoopTape.vst3 /
 - **Kill Dry**: entfernt das Direktsignal (für Return-Spuren)
 
 **Layer Looper**
-- bis **60 s** Loop-Länge, bis **16 Layer**
+- **HOST**: Looper läuft synchron zu Ableton (siehe unten)
+- **TAKTE**: Loop-Länge per Auswahl: **1, 2, 4, 8 oder 16 Takte** oder *Frei*
+- bis **120 s** Loop-Länge, bis **16 Layer**
 - jeder Overdub = eigener Layer → **Undo / Redo Layer für Layer**
 - **Loop Routing**
   - *Print Delay (Post)*: jeder Layer nimmt Eingang **+ Echo** auf. Du kannst zwischen den Layern die
     Delay-Einstellungen ändern, jede Schicht behält ihr eigenes Echo.
   - *Feed Delay (Pre)*: der Loop läuft **durch** das Delay; Delay-Änderungen wirken live auf den ganzen Loop.
-- **Loop Length**: *Free*, auf *Beat* oder *Bar* gerundet (nach Ableton-Tempo). Endet die Aufnahme zu früh, nimmt der Looper bis zum nächsten Raster weiter auf.
 - **Reverse** und **1/2 Speed** (Oktave tiefer, doppelt so lang)
 - Klickfreie Übergänge (Fades an Loop-Naht, Punch-In/Out, Start/Stop, Undo)
-- **Export**: *EXPORT WAV* speichert den Loop als WAV (Mix aller aktiven Layer) oder **jeden Layer einzeln** plus Mix.
+- **Export** der kompletten Looper-Ausgabe: *EXPORT WAV* speichert den Loop als WAV (Mix) oder **jeden Layer einzeln** plus Mix.
   Oder einfach das Feld **LOOP INS SET ZIEHEN** packen und auf eine Audiospur in Ableton ziehen.
+
+## HOST-Sync und Takte
+
+Mit **HOST** an (Standard) läuft der Looper immer synchron zu Ableton:
+
+- **REC** startet die Aufnahme **auf dem nächsten Takt** (Anzeige *WARTET AUF TAKT*, bei gestopptem Ableton *WARTET AUF PLAY*).
+  Nochmal REC vor dem Start bricht ab.
+- Mit **TAKTE = 1 / 2 / 4 / 8 / 16** nimmt der Looper genau so viele Takte auf und geht dann automatisch in die Wiedergabe
+  (Anzeige *REC TAKT 3/4*). Die Taktart kommt aus Ableton (auch 3/4, 6/8 …).
+- Mit **TAKTE = Frei** schließt du den Loop selbst mit REC, die Länge wird auf den nächstgelegenen ganzen Takt gerundet.
+- Der Loop ist an die **Songposition** gekoppelt: Springst du im Arrangement, startest Ableton neu oder änderst das Tempo, bleibt er auf dem Raster.
+  Bei Tempoänderungen läuft er dabei wie ein Tonband schneller oder langsamer (Tonhöhe ändert sich mit).
+- **Ableton gestoppt = Looper stumm**, bei Play läuft er an der passenden Stelle weiter.
+- **½ Speed** dauert dann genau doppelt so viele Takte, **Reverse** bleibt ebenfalls im Raster.
+
+Mit **HOST aus** läuft der Looper frei wie ein Pedal: REC startet sofort, und er spielt auch bei gestopptem Ableton weiter.
+Die Takte-Auswahl funktioniert trotzdem, dann mit dem Ableton-Tempo (bzw. 120 BPM, wenn kein Tempo kommt).
 
 ## Bedienung des Loopers
 
 | Taste | Leer | Aufnahme | Wiedergabe | Overdub | Gestoppt |
 |---|---|---|---|---|---|
-| **REC / DUB** | Aufnahme starten | Loop schließen → Wiedergabe | neuen Layer aufnehmen | Overdub beenden | von vorn + Overdub |
+| **REC / DUB** | Aufnahme starten (HOST: auf nächstem Takt) | *Frei*: Loop schließen → Wiedergabe (bei Takte-Auswahl automatisch) | neuen Layer aufnehmen | Overdub beenden | von vorn + Overdub |
 | **PLAY / STOP** | – | Loop schließen → Stopp | Stopp | Overdub beenden + Stopp | von vorn abspielen |
 | **UNDO** | – | Aufnahme verwerfen | letzten Layer aus | laufenden Take verwerfen | letzten Layer aus |
 | **REDO** | | | Layer wieder an | | Layer wieder an |
@@ -79,12 +95,12 @@ nur umrandet = per Redo wiederherstellbar.
 1. LoopTape auf eine **Return-Spur** legen (z. B. Return A).
 2. **KILL DRY** einschalten, Mix ca. 50–100 %. (Das Direktsignal kommt ja schon aus den Original-Spuren.)
 3. **Loop Routing = Print Delay (Post)**.
-4. Auf einer Spur den Send A aufdrehen → **REC** → spielen → **REC** schließt den Loop.
+4. **HOST** an, **TAKTE** z. B. 4. Ableton starten, auf einer Spur den Send A aufdrehen → **REC** → ab dem nächsten Takt werden 4 Takte aufgenommen.
 5. Delay-Zeit, Feedback, Tone, Wow … verändern, eine andere Spur zum Return schicken → **DUB** → spielen → **DUB**.
 6. Wiederholen: jeder Layer hat sein eigenes Echo, gespeichert auf einem eigenen Layer. Gefällt einer nicht, **UNDO**.
 
 > Der Looper nimmt **immer** das Eingangssignal auf, auch mit KILL DRY: Kill Dry entfernt nur das *live* durchgereichte Direktsignal.
-> Tipp: *Loop Length = Bar* sorgt dafür, dass der Loop taktgenau zum Ableton-Set passt.
+> Durch HOST + Takte passt jeder Loop taktgenau ins Ableton-Set.
 
 ## MIDI-Steuerung / Fußschalter
 
@@ -97,18 +113,21 @@ Ausgelöst wird bei der **steigenden Flanke** (Wert springt von 0 auf 1). Taster
 | Weg | Ergebnis |
 |---|---|
 | **LOOP INS SET ZIEHEN** (Drag & Drop) | Feld auf eine Audiospur oder in die Session-Ansicht ziehen. Die Datei wird dabei in `~/Musik/LoopTape/` gespeichert. |
-| **EXPORT WAV → Loop (Mix)** | eine WAV-Datei mit allen aktiven Layern, Speicherort frei wählbar |
+| **EXPORT WAV → Loop (Mix)** | die komplette Looper-Ausgabe als eine WAV-Datei, Speicherort frei wählbar |
 | **EXPORT WAV → Alle Layer einzeln** | `…_Mix.wav`, `…_Layer01.wav`, `…_Layer02.wav` … in einen Ordner: ideal, um die Schichten in Ableton einzeln weiterzumischen |
 
 - Format: WAV, 32-bit Float (kein Clipping, auch wenn die Layer zusammen lauter als 0 dB sind), Projekt-Samplerate, Stereo.
-- Exportiert wird der Loop exakt in Loop-Länge, vorwärts und in normaler Geschwindigkeit (Reverse/½ Speed sind Wiedergabe-Effekte).
-  Mit *Loop Length = Bar* passt die Datei taktgenau ins Set.
+- Exportiert wird **genau das, was der Looper ausgibt**: ein kompletter Durchlauf mit **½ Speed** (Datei doppelt so lang, eine Oktave tiefer),
+  **Reverse**, **Loop Level** und bei *Feed Delay (Pre)* auch die **Echos** des Loops. Die Echos werden aus dem eingeschwungenen
+  zweiten Durchlauf genommen, damit die Datei nahtlos loopt.
+- Einzel-Layer werden ebenfalls mit ½ Speed / Reverse / Loop Level exportiert (ohne Feed-Delay-Echos, die entstehen nur im Mix).
+- Mit HOST + Takte hat die Datei exakt die gewählte Taktzahl.
 - Der Dateiname enthält das Tempo (z. B. `LoopTape_120bpm_…`), damit Ableton richtig warpt.
 
 ## Hinweise
 
 - Der Loop-Inhalt wird **nicht** im Ableton-Set gespeichert (nur die Einstellungen). Zum Behalten vor dem Schließen exportieren (siehe oben).
-- Speicher: Pro Instanz werden ca. 23 MB (48 kHz) für den Basis-Loop reserviert, Overdub-Layer nach Bedarf in Loop-Länge.
+- Speicher: Pro Instanz werden ca. 46 MB (48 kHz) für den Basis-Loop reserviert, Overdub-Layer nach Bedarf in Loop-Länge.
 
 ## Selbst bauen
 
@@ -123,6 +142,7 @@ JUCE 8 wird automatisch heruntergeladen. Bei jedem Tag `looptape-v*` baut GitHub
 pluginval, auval).
 
 DSP-Tests ohne JUCE: `g++ -std=c++17 -O2 -ISource tests/OfflineTest.cpp -o t && ./t`
+Host-Sync-Test (echter Prozessor mit simuliertem Ableton-Transport): `-DLOOPTAPE_BUILD_TESTS=ON`, Target `looptape_hosttest`.
 
 ## Lizenz & Hinweis
 
