@@ -1,0 +1,18 @@
+LoopTape – Tape Echo + Layer Looper (VST3 + Audio Unit, macOS)
+================================================================
+
+INSTALLATION
+1. Rechtsklick auf "Install.command" -> Öffnen -> Öffnen bestätigen.
+   (Bei neueren macOS-Versionen ggf.: Systemeinstellungen -> Datenschutz & Sicherheit
+   -> "Dennoch öffnen", dann erneut starten.)
+   Das Skript kopiert die Plugins nach ~/Library/Audio/Plug-Ins/ und entfernt das
+   Quarantäne-Flag.
+2. Ableton neu starten.
+
+MANUELL
+  LoopTape.vst3       -> ~/Library/Audio/Plug-Ins/VST3/
+  LoopTape.component  -> ~/Library/Audio/Plug-Ins/Components/
+  danach im Terminal:
+  xattr -dr com.apple.quarantine ~/Library/Audio/Plug-Ins/VST3/LoopTape.vst3 ~/Library/Audio/Plug-Ins/Components/LoopTape.component
+
+Anleitung & Quellcode: https://github.com/donkirschbaum/looptape

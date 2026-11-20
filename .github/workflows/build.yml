@@ -1,0 +1,94 @@
+name: Build macOS
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  macos:
+    runs-on: macos-14
+    env:
+      ARTEFACTS: build/LoopTape_artefacts/Release
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure (universal arm64 + x86_64)
+        run: >
+          cmake -B build -G Xcode
+          -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
+          -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0
+          -DLOOPTAPE_BUILD_TESTS=ON
+
+      - name: Build
+        run: cmake --build build --config Release --parallel 4 -- -quiet
+
+      - name: DSP tests
+        run: ./build/Release/looptape_test
+
+      - name: Ad-hoc code signing
+        run: |
+          codesign --force --deep --sign - "$ARTEFACTS/VST3/LoopTape.vst3"
+          codesign --force --deep --sign - "$ARTEFACTS/AU/LoopTape.component"
+          lipo -info "$ARTEFACTS/VST3/LoopTape.vst3/Contents/MacOS/LoopTape"
+
+      - name: Validate (pluginval + auval)
+        run: |
+          curl -sSL -o pluginval.zip https://github.com/Tracktion/pluginval/releases/latest/download/pluginval_macOS.zip
+          unzip -q pluginval.zip
+          ./pluginval.app/Contents/MacOS/pluginval --strictness-level 8 --validate-in-process \
+              --timeout-ms 300000 "$ARTEFACTS/VST3/LoopTape.vst3"
+          mkdir -p ~/Library/Audio/Plug-Ins/Components
+          cp -R "$ARTEFACTS/AU/LoopTape.component" ~/Library/Audio/Plug-Ins/Components/
+          killall -9 AudioComponentRegistrar 2>/dev/null || true
+          sleep 3
+          auval -v aufx Ltp1 Dkbm
+
+      - name: Package (.pkg installer + .zip)
+        run: |
+          VERSION=$(sed -n 's/^project(LoopTape VERSION \([0-9.]*\).*/\1/p' CMakeLists.txt)
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+
+          # ---- .pkg (installs to /Library/Audio/Plug-Ins, no quarantine issues)
+          mkdir -p pkgroot/Library/Audio/Plug-Ins/VST3 pkgroot/Library/Audio/Plug-Ins/Components
+          cp -R "$ARTEFACTS/VST3/LoopTape.vst3" pkgroot/Library/Audio/Plug-Ins/VST3/
+          cp -R "$ARTEFACTS/AU/LoopTape.component" pkgroot/Library/Audio/Plug-Ins/Components/
+          pkgbuild --analyze --root pkgroot components.plist
+          n=$(/usr/libexec/PlistBuddy -c "Print" components.plist | grep -c "BundleIsRelocatable")
+          for ((i=0; i<n; i++)); do
+            /usr/libexec/PlistBuddy -c "Set :$i:BundleIsRelocatable false" components.plist
+          done
+          pkgbuild --root pkgroot --component-plist components.plist \
+                   --identifier com.donkirschbaum.looptape.pkg --version "$VERSION" \
+                   --install-location / --scripts packaging/scripts \
+                   "LoopTape-$VERSION-macOS.pkg"
+
+          # ---- .zip (manual install)
+          mkdir -p "dist/LoopTape-$VERSION-macOS"
+          cp -R "$ARTEFACTS/VST3/LoopTape.vst3" "$ARTEFACTS/AU/LoopTape.component" "dist/LoopTape-$VERSION-macOS/"
+          cp packaging/Install.command packaging/LIESMICH.txt "dist/LoopTape-$VERSION-macOS/"
+          chmod +x "dist/LoopTape-$VERSION-macOS/Install.command"
+          (cd dist && ditto -c -k --keepParent "LoopTape-$VERSION-macOS" "../LoopTape-$VERSION-macOS.zip")
+          ls -la *.pkg *.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LoopTape-macOS
+          path: |
+            LoopTape-*-macOS.pkg
+            LoopTape-*-macOS.zip
+
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          name: LoopTape ${{ github.ref_name }}
+          body_path: packaging/RELEASE_NOTES.md
+          files: |
+            LoopTape-*-macOS.pkg
+            LoopTape-*-macOS.zip
