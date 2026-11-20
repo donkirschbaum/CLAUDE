@@ -25,7 +25,9 @@ public:
     juce::Font getTextButtonFont (juce::TextButton&, int h) override;
     void drawLinearSlider (juce::Graphics&, int x, int y, int w, int h, float pos, float minP, float maxP,
                            juce::Slider::SliderStyle, juce::Slider&) override;
+    void drawRotarySlider (juce::Graphics&, int x, int y, int w, int h, float pos, float a0, float a1, juce::Slider&) override;
     juce::Label* createSliderTextBox (juce::Slider&) override;
+    juce::Font getSliderPopupFont (juce::Slider&) override;
 };
 
 class PlayButton : public juce::Button
@@ -34,6 +36,19 @@ public:
     PlayButton() : juce::Button ("play") {}
     bool on = false;
     void paintButton (juce::Graphics&, bool over, bool down) override;
+};
+
+// Klick = exportieren und im Finder zeigen, Ziehen = exportieren und direkt in Ableton ablegen
+class ExportButton : public juce::TextButton
+{
+public:
+    std::function<juce::File()> render;
+    std::function<void (const juce::File&)> onClickExport;
+    void mouseDown (const juce::MouseEvent& e) override { dragged = false; juce::TextButton::mouseDown (e); }
+    void mouseDrag (const juce::MouseEvent& e) override;
+    void clicked() override;
+private:
+    bool dragged = false;
 };
 
 class Content;
@@ -62,6 +77,30 @@ private:
     FundstueckProcessor& proc; Content& content;
 };
 
+class SampleEditView : public juce::Component
+{
+public:
+    SampleEditView (FundstueckProcessor&, Content&);
+    void open (int idx);
+    int index = -1;
+    void paint (juce::Graphics&) override;
+    void resized() override;
+    void mouseDown (const juce::MouseEvent&) override;
+    void mouseDrag (const juce::MouseEvent&) override;
+    void mouseUp (const juce::MouseEvent&) override;
+    void mouseDoubleClick (const juce::MouseEvent&) override;
+    void mouseMove (const juce::MouseEvent&) override;
+private:
+    float xToFrac (float x) const;
+    float fracToX (float f) const;
+    FundstueckProcessor& proc; Content& content;
+    juce::Rectangle<int> waveR;
+    int dragging = 0;
+    float ts = 0, te = 1;
+    juce::TextButton closeBtn { "X" }, playBtn, resetBtn, prevBtn, nextBtn;
+    juce::OwnedArray<juce::TextButton> laneBtns;
+};
+
 class LaneRow : public juce::Component
 {
 public:
@@ -69,15 +108,16 @@ public:
     void paint (juce::Graphics&) override;
     void resized() override;
     void mouseDown (const juce::MouseEvent&) override;
+    void mouseDoubleClick (const juce::MouseEvent&) override;
     void mouseWheelMove (const juce::MouseEvent&, const juce::MouseWheelDetails&) override;
 private:
     juce::Rectangle<float> stepRect (int s) const;
     int stepAt (juce::Point<float>) const;
     FundstueckProcessor& proc; Content& content; const int lane;
-    juce::Slider vol, tune, len;
-    juce::TextButton mute { "M" };
-    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> aVol, aTune, aLen;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> aMute;
+    juce::Slider vol, tune, atk, dec, len;
+    juce::TextButton solo { "S" }, mute { "M" }, poly { "P" };
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> aVol, aTune, aAtk, aDec, aLen;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> aSolo, aMute, aPoly;
     juce::Rectangle<int> nameR, thumbR, upR, downR, stepsR;
 };
 
@@ -89,6 +129,7 @@ public:
     void paint (juce::Graphics&) override;
     void resized() override;
     void chooseSlice (int i);
+    void openEditor (int i);
     void openFileChooser();
     int armed = -1;
     static constexpr int W = 1100, H = 700;
@@ -102,22 +143,24 @@ private:
     juce::Slider bpm, swing, feel, rev, tape, sub, master, sens, dens;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> aBpm, aSwing, aFeel, aRev, aTape, aSub, aMaster;
     juce::TextButton demoBtn, loadBtn, recBtn, syncBtn, rollAll, rollDrums, rollMel, rollSounds, clearBtn;
+    ExportButton exportBtn;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> aSync;
-    juce::Rectangle<int> meterR { 690, 82, 50, 20 };
-    float shownLevel = 0;
-    double shownHostBpm = -1;
-    bool seenSync = false, seenRec = false;
-    int seenRecTenths = -1;
     juce::OwnedArray<juce::TextButton> styleBtns;
     juce::ComboBox rootBox, scaleBox;
     OverviewView overview;
     ChipsView chips;
     juce::OwnedArray<LaneRow> lanes;
+    SampleEditView editor;
     std::unique_ptr<juce::FileChooser> chooser;
+    juce::Rectangle<int> meterR { 690, 82, 50, 20 };
+    float shownLevel = 0;
+    double shownHostBpm = -1;
+    bool seenSync = false, seenRec = false;
+    int seenRecTenths = -1;
     int seenVersion = -1, seenStep = -2;
-    bool seenHost = false;
     juce::uint32 sensChangedAt = 0;
     bool sensDirty = false;
+    juce::TooltipWindow tips { this, 700 };
 };
 
 class FundstueckEditor : public juce::AudioProcessorEditor, public juce::FileDragAndDropTarget

@@ -32,5 +32,22 @@ int main(){
   rc.apvts.getParameter("sync")->setValueNotifyingHost(1.f); rc.internalPlay=true; int changes=0,lastS=-5;
   for(int i=0;i<100;i++){ io.clear(); rc.processBlock(io,em); if(rc.currentStep.load()!=lastS){changes++;lastS=rc.currentStep.load();} }
   printf("sync on, no host: syncOn=%d stepChanges=%d (erwartet 0-1)\n", (int)rc.syncOn.load(), changes);
+  // Polymeter + Export
+  FundstueckProcessor ex; ex.setRateAndBufferSizeDetails(48000,512); ex.prepareToPlay(48000,512);
+  { juce::AudioBuffer<float> b2(4,512); juce::MidiBuffer e2; ex.processBlock(b2,e2); }
+  printf("loopSteps default=%d\n", ex.loopSteps());
+  ex.apvts.getParameter("perc_poly")->setValueNotifyingHost(1.f);
+  auto* stp = ex.apvts.getParameter("perc_steps"); stp->setValueNotifyingHost(stp->convertTo0to1(3.f));
+  for(int s2=0;s2<16;s2++) ex.steps[3][s2] = (s2==0);
+  printf("perc len=%d loopSteps=%d (erwartet 48)\n", ex.laneLength(3), ex.loopSteps());
+  ex.setTrim(0, .1f, .5f); printf("trim0 %.2f..%.2f\n", ex.getTrimStart(0), ex.getTrimEnd(0));
+  juce::String info; auto t0=juce::Time::getMillisecondCounterHiRes(); auto f = ex.exportLoop(info);
+  printf("export %s exists=%d size=%lld ms=%.0f\n  %s\n", f.getFileName().toRawUTF8(), (int)f.existsAsFile(), (long long)f.getSize(), juce::Time::getMillisecondCounterHiRes()-t0, info.toRawUTF8());
+  { juce::AudioFormatManager fm; fm.registerBasicFormats(); std::unique_ptr<juce::AudioFormatReader> rd(fm.createReaderFor(f));
+    if(rd){ printf("  wav: %.0f Hz, %d ch, %.3f s (erwartet %.3f s)\n", rd->sampleRate,(int)rd->numChannels, rd->lengthInSamples/rd->sampleRate, 48*60.0/90/4);
+      juce::AudioBuffer<float> wb(2,(int)rd->lengthInSamples); rd->read(&wb,0,(int)rd->lengthInSamples,0,true,true); printf("  peak=%.3f rms=%.3f\n", wb.getMagnitude(0,wb.getNumSamples()), wb.getRMSLevel(0,0,wb.getNumSamples())); } }
+  // Solo: nur Kick
+  ex.apvts.getParameter("kick_solo")->setValueNotifyingHost(1.f); auto f2=ex.exportLoop(info); printf("solo export: %s\n", info.toRawUTF8());
+  f.deleteFile(); f2.deleteFile();
   return 0;
 }

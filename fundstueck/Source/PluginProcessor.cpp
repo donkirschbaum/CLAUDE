@@ -1,5 +1,6 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
+#include <numeric>
 
 using namespace fs;
 
@@ -64,9 +65,16 @@ juce::AudioProcessorValueTreeState::ParameterLayout FundstueckProcessor::createL
             AudioParameterFloatAttributes().withStringFromValueFunction ([] (float v, int) { return String (roundToInt (v * 100)); })));
         p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { id + "_tune", 1 }, nm + " Tune", NormalisableRange<float> (-12.f, 12.f, 1.f), 0.f,
             AudioParameterFloatAttributes().withStringFromValueFunction ([] (float v, int) { const int n = roundToInt (v); return (n > 0 ? "+" : "") + String (n); })));
-        p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { id + "_len", 1 }, nm + " Laenge", NormalisableRange<float> (0.05f, 1.f, 0.01f), kDefLen[i],
-            AudioParameterFloatAttributes().withStringFromValueFunction ([] (float v, int) { return String (roundToInt (v * 100)); })));
-        p.push_back (std::make_unique<AudioParameterBool> (ParameterID { id + "_mute", 1 }, nm + " Stumm", false));
+        NormalisableRange<float> atkRange (0.f, 500.f, 0.1f); atkRange.setSkewForCentre (40.f);
+        p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { id + "_atk", 1 }, nm + " Attack", atkRange, 0.f,
+            AudioParameterFloatAttributes().withStringFromValueFunction ([] (float v, int) { return v < 10 ? String (v, 1) + " ms" : String (roundToInt (v)) + " ms"; })));
+        p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { id + "_len", 1 }, nm + " Decay", NormalisableRange<float> (0.05f, 1.f, 0.01f), kDefLen[i],
+            AudioParameterFloatAttributes().withStringFromValueFunction ([] (float v, int) { return String (roundToInt (v * 100)) + " %"; })));
+        p.push_back (std::make_unique<AudioParameterBool> (ParameterID { id + "_mute", 1 }, nm + " Mute", false));
+        p.push_back (std::make_unique<AudioParameterBool> (ParameterID { id + "_solo", 1 }, nm + " Solo", false));
+        p.push_back (std::make_unique<AudioParameterBool> (ParameterID { id + "_poly", 1 }, nm + " Polymeter", false));
+        p.push_back (std::make_unique<AudioParameterInt> (ParameterID { id + "_steps", 1 }, nm + " Steps", 1, 16, 16,
+            AudioParameterIntAttributes().withStringFromValueFunction ([] (int v, int) { return String (v) + "/16"; })));
     }
     return { p.begin(), p.end() };
 }
@@ -87,12 +95,17 @@ FundstueckProcessor::FundstueckProcessor()
         pTune[l] = apvts.getRawParameterValue (id + "_tune");
         pLen[l] = apvts.getRawParameterValue (id + "_len");
         pMute[l] = apvts.getRawParameterValue (id + "_mute");
+        pAtk[l] = apvts.getRawParameterValue (id + "_atk");
+        pSolo[l] = apvts.getRawParameterValue (id + "_solo");
+        pPoly[l] = apvts.getRawParameterValue (id + "_poly");
+        pSteps[l] = apvts.getRawParameterValue (id + "_steps");
     }
     pBpm = apvts.getRawParameterValue ("bpm");   pSwing = apvts.getRawParameterValue ("swing");
     pFeel = apvts.getRawParameterValue ("feel"); pRev = apvts.getRawParameterValue ("rev");
     pTape = apvts.getRawParameterValue ("tape"); pSub = apvts.getRawParameterValue ("sub");
     pMaster = apvts.getRawParameterValue ("master");
     pSync = apvts.getRawParameterValue ("sync");
+    for (int i = 0; i < kMaxSlices; ++i) { trimS[i] = 0.f; trimE[i] = 1.f; }
     loadDemo();
 }
 
@@ -124,14 +137,22 @@ void FundstueckProcessor::pushEvent (const Event& e)
     if (numEvents < kMaxEvents) events[numEvents++] = e;
 }
 
-void FundstueckProcessor::scheduleStep (int step, juce::int64 when, double stepS)
+int FundstueckProcessor::laneLength (int l) const
+{
+    return pPoly[l]->load() > 0.5f ? juce::jlimit (1, kSteps, (int) std::lround (pSteps[l]->load())) : kSteps;
+}
+
+void FundstueckProcessor::scheduleStep (juce::int64 k, juce::int64 when, double stepS)
 {
     const float sw = (pSwing->load() - 50.f) / 50.f, feel = pFeel->load() / 100.f;
-    const juce::int64 t = when + (step % 2 ? (juce::int64) (sw * stepS * 0.66) : 0);
-    Event mk; mk.when = t; mk.lane = -1; mk.val = step; pushEvent (mk);
+    const juce::int64 t = when + (k % 2 ? (juce::int64) (sw * stepS * 0.66) : 0);
+    Event mk; mk.when = t; mk.lane = -1; mk.val = (int) (k % kStepWrap); pushEvent (mk);
+    bool anySolo = false;
+    for (int l = 0; l < kLanes; ++l) anySolo = anySolo || pSolo[l]->load() > 0.5f;
     for (int l = 0; l < kLanes; ++l)
     {
-        if (pMute[l]->load() > 0.5f) continue;
+        if (pMute[l]->load() > 0.5f || (anySolo && pSolo[l]->load() < 0.5f)) continue;
+        const int step = (int) (k % laneLength (l));
         const int val = steps[l][step].load();
         if (l == kMel ? val < 0 : val == 0) continue;
         const float acc = step % 4 == 0 ? 1.0f : (step % 2 == 0 ? .85f : .72f);
@@ -150,19 +171,24 @@ void FundstueckProcessor::scheduleStep (int step, juce::int64 when, double stepS
     }
 }
 
-void FundstueckProcessor::startVoice (const Slice& s, int lane, double rate, float gain, float len, int ftype, float freq)
+void FundstueckProcessor::startVoice (const Slice& s, int si, int lane, double rate, float gain, float len, float atkMs, int ftype, float freq)
 {
-    if (s.data.size() < 2 || rate <= 0) return;
+    if (s.data.size() < 4 || rate <= 0) return;
     Voice* v = nullptr; int oldest = -1;
     for (auto& c : voices) if (! c.active) { v = &c; break; }
     if (v == nullptr)
         for (auto& c : voices) if (c.age > oldest) { oldest = c.age; v = &c; }
     *v = Voice();
-    v->active = true; v->data = s.data.data(); v->length = (int) s.data.size();
+    const int n = (int) s.data.size();
+    const int a = juce::jlimit (0, n - 4, (int) (getTrimStart (si) * (float) n));
+    const int b = juce::jlimit (a + 4, n, (int) (getTrimEnd (si) * (float) n));
+    v->active = true; v->data = s.data.data() + a; v->length = b - a;
     v->rate = rate; v->gain = gain; v->lane = lane;
     const double full = (double) v->length / rate;
     const double lenS = juce::jmax (0.03 * sr, (double) len * full);
-    v->hold = (int) (lenS * 0.7);
+    v->atk = (int) (juce::jmax (0.001, atkMs / 1000.0) * sr);
+    v->fo = (float) (0.004 * sr);
+    v->hold = juce::jmax (v->atk, (int) (lenS * 0.7));
     const double tau = lenS * 0.12 / sr + 0.004;
     v->coef = (float) std::exp (-1.0 / (tau * sr));
     v->ftype = ftype;
@@ -185,6 +211,7 @@ void FundstueckProcessor::startSub (float gain)
     *v = Voice();
     v->active = true; v->isSub = true; v->gain = gain * amt * .9f; v->lane = 0;
     v->hold = (int) (0.05 * sr);
+    v->atk = (int) (0.004 * sr);
     v->coef = (float) std::exp (-1.0 / (0.09 * sr));
 }
 
@@ -198,12 +225,12 @@ void FundstueckProcessor::fire (const Event& e)
     const Slice& s = set->slices[(size_t) si];
     const double ratio = set->sampleRate / sr;
 
-    if (e.lane == -2) { startVoice (s, -2, ratio, .8f, 1.f, 0, 0.f); return; }
+    if (e.lane == -2) { startVoice (s, si, -2, ratio, .8f, 1.f, 1.f, 0, 0.f); return; }
 
     const int l = e.lane;
     const float feel = pFeel->load() / 100.f;
     const float vel = e.vel * (1.f - feel * .25f * audioRand.nextFloat());
-    const float vol = pVol[l]->load(), tune = pTune[l]->load(), len = pLen[l]->load();
+    const float vol = pVol[l]->load(), tune = pTune[l]->load(), len = pLen[l]->load(), atk = pAtk[l]->load();
 
     if (l == kMel)
     {
@@ -212,18 +239,17 @@ void FundstueckProcessor::fire (const Event& e)
         const float rel = (float) std::exp (-1.0 / (0.012 * sr));
         for (auto& v : voices)
             if (v.active && v.lane == kMel && ! v.releasing) { v.releasing = true; v.relCoef = rel; }
-        startVoice (s, l, rate, vol * vel, len, kFType[l], kFreq[l]);
+        startVoice (s, si, l, rate, vol * vel, len, atk, kFType[l], kFreq[l]);
         return;
     }
     const double rate = std::pow (2.0, (kBase[l] + tune) / 12.0) * ratio;
-    startVoice (s, l, rate, vol * vel, e.slice >= 0 ? juce::jmax (len, .4f) : len, kFType[l], kFreq[l]);
+    startVoice (s, si, l, rate, vol * vel, e.slice >= 0 ? juce::jmax (len, .4f) : len, atk, kFType[l], kFreq[l]);
     if (l == 0) startSub (vol * vel);
 }
 
 void FundstueckProcessor::render (int from, int to)
 {
     if (to <= from) return;
-    const float atk = (float) (0.004 * sr);
     for (auto& v : voices)
     {
         if (! v.active) continue;
@@ -235,7 +261,7 @@ void FundstueckProcessor::render (int from, int to)
                 const double t = v.age / sr;
                 const double f = 48.0 + 92.0 * std::exp (-t * 35.0);
                 v.phase += f / sr; if (v.phase >= 1.0) v.phase -= 1.0;
-                s = (float) std::sin (2.0 * kPi * v.phase) * juce::jmin (1.0f, (float) v.age / atk);
+                s = (float) std::sin (2.0 * kPi * v.phase);
             }
             else
             {
@@ -255,7 +281,13 @@ void FundstueckProcessor::render (int from, int to)
             }
             if (v.releasing) v.env *= v.relCoef;
             else if (v.age >= v.hold) v.env *= v.coef;
-            mix[(size_t) n] += s * v.env * v.gain;
+            float amp = v.age < v.atk ? (float) v.age / (float) v.atk : 1.0f;
+            if (! v.isSub)
+            {
+                const float rem = (float) ((v.length - 1 - v.pos) / v.rate);
+                if (rem < v.fo) amp *= juce::jmax (0.0f, rem / v.fo);
+            }
+            mix[(size_t) n] += s * v.env * v.gain * amp;
             ++v.age;
             if (v.env < 1.0e-4f) { v.active = false; break; }
         }
@@ -318,7 +350,7 @@ void FundstueckProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
     // Transport
     const bool sync = pSync->load() > 0.5f;
     syncOn = sync;
-    bool hp = false; double ppq = 0, bpm = pBpm->load(), hb = 0.0;
+    bool hp = false; double ppq = 0, bpm = bpmOverride > 0 ? bpmOverride : (double) pBpm->load(), hb = 0.0;
     if (auto* ph = getPlayHead())
         if (auto pos = ph->getPosition())
         {
@@ -351,7 +383,7 @@ void FundstueckProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
         while ((double) nextK * 0.25 < ppqEnd)
         {
             const double off = juce::jmax (0.0, ((double) nextK * 0.25 - ppqStart) * spq);
-            scheduleStep ((int) (nextK % kSteps), clock + (juce::int64) off, stepS);
+            scheduleStep (nextK, clock + (juce::int64) off, stepS);
             ++nextK;
         }
         expectedPpq = ppqEnd;
@@ -541,7 +573,7 @@ void FundstueckProcessor::reanalyze (Mode mode)
     else
         statusText = sourceLabel + juce::String (juce::CharPointer_UTF8 (" \xc2\xb7 ")) + secs + juce::String (juce::CharPointer_UTF8 (" s \xc2\xb7 "))
                      + juce::String ((int) set->slices.size()) + " Schnipsel";
-    if (mode != Mode::Restore) autoAssign (false);
+    if (mode != Mode::Restore) { resetTrims(); autoAssign (false); }
     if (mode == Mode::Fresh) { rollDrums(); rollMel(); }
     bump();
 }
@@ -719,6 +751,91 @@ void FundstueckProcessor::shiftNote (int lane, int step, int dir)
     bump();
 }
 
+void FundstueckProcessor::setTrim (int i, float a, float b)
+{
+    if (i < 0 || i >= kMaxSlices) return;
+    a = juce::jlimit (0.f, 0.98f, a);
+    b = juce::jlimit (a + 0.02f, 1.f, b);
+    trimS[i] = a; trimE[i] = b;
+    bump();
+}
+
+void FundstueckProcessor::resetTrims()
+{
+    for (int i = 0; i < kMaxSlices; ++i) { trimS[i] = 0.f; trimE[i] = 1.f; }
+}
+
+int FundstueckProcessor::loopSteps() const
+{
+    // Wiederholung, wenn alle Spurlaengen gemeinsam von vorn beginnen (inkl. Grundtakt 16)
+    long long l = kSteps;
+    bool anySolo = false;
+    for (int ln = 0; ln < kLanes; ++ln) anySolo = anySolo || pSolo[ln]->load() > 0.5f;
+    for (int ln = 0; ln < kLanes; ++ln)
+    {
+        if (pMute[ln]->load() > 0.5f || (anySolo && pSolo[ln]->load() < 0.5f)) continue;
+        const int L = laneLength (ln);
+        bool any = false;
+        for (int st = 0; st < L; ++st) { const int v = steps[ln][st].load(); any = any || (ln == kMel ? v >= 0 : v != 0); }
+        if (any) l = std::lcm (l, (long long) L);
+    }
+    return (int) l;
+}
+
+juce::File FundstueckProcessor::exportLoop (juce::String& info)
+{
+    const double rate = sr > 0 ? sr : 44100.0;
+    const double bpm = juce::jlimit (20.0, 400.0, (pSync->load() > 0.5f && hostBpm.load() > 0) ? hostBpm.load() : (double) pBpm->load());
+    int L = loopSteps();
+    const double stepS = rate * 60.0 / bpm / 4.0;
+    bool capped = false;
+    if ((double) L * stepS > 600.0 * rate) { L = juce::jmax (16, (int) (600.0 * rate / stepS) / 16 * 16); capped = true; }
+    const int total = (int) std::llround ((double) L * stepS);
+
+    // Offline-Kopie mit identischem Zustand rendern: 2 Durchlaeufe, der zweite enthaelt die Ausklaenge des ersten
+    FundstueckProcessor off;
+    juce::MemoryBlock st; getStateInformation (st);
+    off.setStateInformation (st.getData(), (int) st.getSize());
+    for (int i = 0; i < kMaxSlices; ++i) { off.trimS[i] = trimS[i].load(); off.trimE[i] = trimE[i].load(); }
+    if (auto* p = off.apvts.getParameter ("sync")) p->setValueNotifyingHost (0.f);
+    off.bpmOverride = bpm;
+    off.setRateAndBufferSizeDetails (rate, 512);
+    off.prepareToPlay (rate, 512);
+    off.internalPlay = true;
+    const int nch = juce::jmax (2, off.getTotalNumInputChannels(), off.getTotalNumOutputChannels());
+    juce::AudioBuffer<float> blk (nch, 512), out (2, total);
+    juce::MidiBuffer m;
+    for (int done = 0; done < 2 * total;)
+    {
+        const int n = juce::jmin (512, 2 * total - done);
+        blk.setSize (nch, n, false, false, true);
+        blk.clear();
+        off.processBlock (blk, m);
+        for (int i = 0; i < n; ++i)
+            if (done + i >= total)
+                for (int c = 0; c < 2; ++c) out.setSample (c, done + i - total, blk.getSample (juce::jmin (c, blk.getNumChannels() - 1), i));
+        done += n;
+    }
+
+    auto dir = juce::File::getSpecialLocation (juce::File::userMusicDirectory).getChildFile ("Fundstueck Exporte");
+    dir.createDirectory();
+    const auto bars = L % 16 == 0 ? juce::String (L / 16) : juce::String (L / 16.0, 2);
+    auto f = dir.getNonexistentChildFile ("Fundstueck_" + juce::String (juce::roundToInt (bpm)) + "bpm_" + bars + "Takte_"
+                                          + juce::Time::getCurrentTime().formatted ("%H%M%S"), ".wav", false);
+    juce::WavAudioFormat wav;
+    std::unique_ptr<juce::OutputStream> os (f.createOutputStream().release());
+    if (os == nullptr) { info = "Export fehlgeschlagen: " + dir.getFullPathName(); return {}; }
+    std::unique_ptr<juce::AudioFormatWriter> w (wav.createWriterFor (os.get(), rate, 2, 24, {}, 0));
+    if (w == nullptr) { info = "Export fehlgeschlagen (WAV)"; return {}; }
+    os.release();
+    w->writeFromAudioSampleBuffer (out, 0, total);
+    w.reset();
+    info = "Export: " + bars + " Takte (" + juce::String (L) + " Steps)" + juce::String (juce::CharPointer_UTF8 (" \xc2\xb7 ")) + juce::String (bpm, 1) + " BPM"
+           + (capped ? juce::String (juce::CharPointer_UTF8 (" (auf 10 min gek\xc3\xbc" "rzt)")) : juce::String())
+           + juce::String (juce::CharPointer_UTF8 (" \xe2\x86\x92 ")) + f.getFileName();
+    return f;
+}
+
 // ======================================================================
 //  Zustand speichern / laden (inkl. Quell-Audio, damit Projekte wieder klingen)
 // ======================================================================
@@ -740,6 +857,9 @@ void FundstueckProcessor::getStateInformation (juce::MemoryBlock& dest)
     }
     st.setProperty ("pattern", pat, nullptr);
     st.setProperty ("slices", sl, nullptr);
+    juce::String tr;
+    for (int i = 0; i < kMaxSlices; ++i) tr << juce::String (trimS[i].load(), 4) << ":" << juce::String (trimE[i].load(), 4) << ",";
+    st.setProperty ("trims", tr, nullptr);
     if (! source.empty())
     {
         juce::MemoryBlock mb (source.size() * sizeof (juce::int16));
@@ -786,6 +906,11 @@ void FundstueckProcessor::setStateInformation (const void* data, int size)
         }
         if (l < sl.size() && sl[l].isNotEmpty()) laneSlice[l] = sl[l].getIntValue();
     }
+    juce::StringArray tr;
+    tr.addTokens (st.getProperty ("trims").toString(), ",", "");
+    for (int i = 0; i < kMaxSlices && i < tr.size(); ++i)
+        if (tr[i].contains (":")) { trimS[i] = tr[i].upToFirstOccurrenceOf (":", false, false).getFloatValue();
+                                    trimE[i] = tr[i].fromFirstOccurrenceOf (":", false, false).getFloatValue(); }
     updateMelOct();
     bump();
 }

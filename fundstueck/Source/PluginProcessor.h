@@ -6,7 +6,8 @@
 namespace fs
 {
 constexpr int kLanes = 5, kSteps = 16, kMel = 4;
-constexpr int kMaxVoices = 64, kMaxEvents = 512;
+constexpr int kMaxVoices = 64, kMaxEvents = 512, kMaxSlices = 32;
+constexpr int kStepWrap = 720720; // kgV(1..16): Spur-Positionen bleiben beim Ueberlauf stimmig
 
 struct Style
 {
@@ -34,7 +35,8 @@ struct Voice
     const float* data = nullptr; int length = 0;
     double pos = 0, rate = 1, phase = 0;
     float gain = 0, env = 1, coef = 1, relCoef = 1;
-    int hold = 0, age = 0, lane = 0;
+    int hold = 0, age = 0, lane = 0, atk = 0;
+    float fo = 0;
     int ftype = 0; float a1 = 0, a2 = 0, a3 = 0, k = 1.414f, ic1 = 0, ic2 = 0;
 };
 } // namespace fs
@@ -86,6 +88,14 @@ public:
     std::vector<int> scaleNotes() const;
     void updateMelOct();
     void bump() { ++uiVersion; }
+    int laneLength (int lane) const;
+    int loopSteps() const;
+    juce::File exportLoop (juce::String& info);
+    void setTrim (int slice, float start, float end);
+    void resetTrims();
+    float getTrimStart (int i) const { return i >= 0 && i < fs::kMaxSlices ? trimS[i].load() : 0.f; }
+    float getTrimEnd (int i) const   { return i >= 0 && i < fs::kMaxSlices ? trimE[i].load() : 1.f; }
+    double bpmOverride = 0.0;  // nur fuer den Offline-Export
 
     std::shared_ptr<fs::SliceSet> msgSet;
     std::vector<float> source;
@@ -115,9 +125,9 @@ public:
 
 private:
     void pushEvent (const fs::Event& e);
-    void scheduleStep (int step, juce::int64 when, double stepS);
+    void scheduleStep (juce::int64 k, juce::int64 when, double stepS);
     void fire (const fs::Event& e);
-    void startVoice (const fs::Slice& s, int lane, double rate, float gain, float len, int ftype, float freq);
+    void startVoice (const fs::Slice& s, int sliceIdx, int lane, double rate, float gain, float len, float atkMs, int ftype, float freq);
     void startSub (float gain);
     void render (int from, int to);
 
@@ -146,6 +156,9 @@ private:
     std::vector<float> recBuf;
     std::atomic<float>* pVol[fs::kLanes] {}; std::atomic<float>* pTune[fs::kLanes] {};
     std::atomic<float>* pLen[fs::kLanes] {}; std::atomic<float>* pMute[fs::kLanes] {};
+    std::atomic<float>* pAtk[fs::kLanes] {}; std::atomic<float>* pSolo[fs::kLanes] {};
+    std::atomic<float>* pPoly[fs::kLanes] {}; std::atomic<float>* pSteps[fs::kLanes] {};
+    std::atomic<float> trimS[fs::kMaxSlices], trimE[fs::kMaxSlices];
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FundstueckProcessor)
 };

@@ -8,23 +8,32 @@ using namespace juce;
 static const char* kNoteNames[12] = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "H" };
 static const char* kClsNames[4] = { "tief", "mittel", "hell", "tonal" };
 static const char* kLaneNames[5] = { "Kick", "Snare", "Hat", "Perc", "Melodie" };
+static const char* kLaneIds[5] = { "kick", "snare", "hat", "perc", "mel" };
 
 static Font fnt (float h, bool bold = false) { return Font (FontOptions (h, bold ? Font::bold : Font::plain)); }
 
-static void drawWave (Graphics& g, const std::vector<float>& d, Rectangle<float> r, Colour c)
+static void drawWave (Graphics& g, const std::vector<float>& d, Rectangle<float> r, Colour c, size_t from = 0, size_t to = 0)
 {
-    if (d.empty() || r.getWidth() < 1) return;
+    if (to == 0 || to > d.size()) to = d.size();
+    if (to <= from || r.getWidth() < 1) return;
     g.setColour (c);
     const int w = (int) r.getWidth();
-    const size_t n = d.size();
+    const size_t n = to - from;
     for (int x = 0; x < w; ++x)
     {
-        const size_t a = (size_t) ((double) x / w * n), b = juce::jmax (a + 1, (size_t) ((double) (x + 1) / w * n));
+        const size_t a = from + (size_t) ((double) x / w * n), b = jmax (a + 1, from + (size_t) ((double) (x + 1) / w * n));
         float mn = 0, mx = 0;
-        for (size_t i = a; i < b && i < n; ++i) { mn = jmin (mn, d[i]); mx = jmax (mx, d[i]); }
+        for (size_t i = a; i < b && i < to; ++i) { mn = jmin (mn, d[i]); mx = jmax (mx, d[i]); }
         const float y1 = r.getCentreY() - mx * r.getHeight() * .5f, y2 = r.getCentreY() - mn * r.getHeight() * .5f;
         g.fillRect (r.getX() + (float) x, y1, 1.0f, jmax (1.0f, y2 - y1));
     }
+}
+
+static String clsLabel (const fs::Slice& s)
+{
+    String lab (kClsNames[s.cls]);
+    if (s.cls == fs::clsTonal) lab << " " << kNoteNames[((int) std::round (s.midi) % 12 + 12) % 12];
+    return lab;
 }
 
 // ---------------------------------------------------------------- Look
@@ -47,6 +56,11 @@ FsLook::FsLook()
     setColour (PopupMenu::highlightedBackgroundColourId, col::ink);
     setColour (PopupMenu::highlightedTextColourId, col::dark);
     setColour (Label::textColourId, col::ink);
+    setColour (BubbleComponent::backgroundColourId, col::bg);
+    setColour (BubbleComponent::outlineColourId, col::line);
+    setColour (TooltipWindow::backgroundColourId, col::bg);
+    setColour (TooltipWindow::textColourId, col::ink);
+    setColour (TooltipWindow::outlineColourId, col::line);
 }
 
 void FsLook::drawButtonBackground (Graphics& g, Button& b, const Colour& bgc, bool over, bool down)
@@ -54,13 +68,15 @@ void FsLook::drawButtonBackground (Graphics& g, Button& b, const Colour& bgc, bo
     auto r = b.getLocalBounds().toFloat().reduced (.5f);
     auto c = b.getToggleState() ? b.findColour (TextButton::buttonOnColourId) : bgc;
     if (down) c = c.brighter (.1f);
+    const float rad = jmin (7.f, r.getHeight() * .3f);
     g.setColour (c);
-    g.fillRoundedRectangle (r, 7.f);
+    g.fillRoundedRectangle (r, rad);
     g.setColour (b.getToggleState() ? c : (over ? Colour (0xff5a5141) : col::line));
-    g.drawRoundedRectangle (r, 7.f, 1.f);
+    g.drawRoundedRectangle (r, rad, 1.f);
 }
 
-Font FsLook::getTextButtonFont (TextButton&, int h) { return fnt (jmin (14.f, h * .55f)); }
+Font FsLook::getTextButtonFont (TextButton& b, int h) { return fnt (jmin (14.f, h * .55f), b.getHeight() < 26); }
+Font FsLook::getSliderPopupFont (Slider&) { return fnt (12, true); }
 
 void FsLook::drawLinearSlider (Graphics& g, int x, int y, int w, int h, float pos, float, float, Slider::SliderStyle st, Slider& s)
 {
@@ -69,13 +85,28 @@ void FsLook::drawLinearSlider (Graphics& g, int x, int y, int w, int h, float po
     g.setColour (s.findColour (Slider::backgroundColourId));
     g.fillRoundedRectangle (r, 5.f);
     g.setColour (s.findColour (Slider::trackColourId).withAlpha (.55f));
-    if (s.getMinimum() < 0 && s.getMaximum() > 0) // bipolar (Tune)
-    {
-        const float zero = (float) s.getPositionOfValue (0.0);
-        g.fillRoundedRectangle (Rectangle<float>::leftTopRightBottom (jmin (zero, pos), r.getY(), jmax (zero, pos), r.getBottom()), 4.f);
-    }
-    else
-        g.fillRoundedRectangle (r.withRight (pos), 5.f);
+    g.fillRoundedRectangle (r.withRight (pos), 5.f);
+}
+
+void FsLook::drawRotarySlider (Graphics& g, int x, int y, int w, int h, float pos, float a0, float a1, Slider& s)
+{
+    const auto c = s.findColour (Slider::trackColourId).withMultipliedAlpha (s.isEnabled() ? 1.f : .4f);
+    const float alpha = (float) s.getProperties().getWithDefault ("dimmed", false) ? .35f : 1.f;
+    auto r = Rectangle<float> ((float) x, (float) y, (float) w, (float) h).reduced (2);
+    const float d = jmin (r.getWidth(), r.getHeight()), rad = d * .5f;
+    const auto ctr = r.getCentre();
+    const float ang = a0 + pos * (a1 - a0);
+    const bool bipolar = s.getMinimum() < 0 && s.getMaximum() > 0;
+    const float from = bipolar ? (a0 + a1) * .5f : a0;
+
+    Path track; track.addCentredArc (ctr.x, ctr.y, rad - 2, rad - 2, 0, a0, a1, true);
+    g.setColour (col::line); g.strokePath (track, PathStrokeType (3.f, PathStrokeType::curved, PathStrokeType::rounded));
+    Path val; val.addCentredArc (ctr.x, ctr.y, rad - 2, rad - 2, 0, jmin (from, ang), jmax (from, ang), true);
+    g.setColour (c.withMultipliedAlpha (alpha)); g.strokePath (val, PathStrokeType (3.f, PathStrokeType::curved, PathStrokeType::rounded));
+
+    g.setColour (col::panel.brighter (.05f)); g.fillEllipse (Rectangle<float> (d - 10, d - 10).withCentre (ctr));
+    Path ptr; ptr.addRoundedRectangle (-1.2f, -(rad - 6), 2.4f, rad * .55f, 1.f);
+    g.setColour (col::ink.withMultipliedAlpha (alpha)); g.fillPath (ptr, AffineTransform::rotation (ang).translated (ctr));
 }
 
 Label* FsLook::createSliderTextBox (Slider& s)
@@ -84,7 +115,7 @@ Label* FsLook::createSliderTextBox (Slider& s)
     l->setColour (Label::backgroundColourId, Colours::transparentBlack);
     l->setColour (Label::outlineColourId, Colours::transparentBlack);
     l->setColour (Label::textColourId, col::ink);
-    l->setFont (fnt (s.getHeight() < 20 ? 11.f : 13.f));
+    l->setFont (fnt (13.f));
     l->setJustificationType (Justification::centred);
     return l;
 }
@@ -92,9 +123,9 @@ Label* FsLook::createSliderTextBox (Slider& s)
 void PlayButton::paintButton (Graphics& g, bool over, bool)
 {
     auto r = getLocalBounds().toFloat().reduced (2);
-    g.setColour (on ? col::ink : col::lane[0]);
+    g.setColour ((on ? col::ink : col::lane[0]).withMultipliedAlpha (isEnabled() ? 1.f : .5f));
     g.fillEllipse (r);
-    if (over) { g.setColour (Colours::white.withAlpha (.12f)); g.fillEllipse (r); }
+    if (over && isEnabled()) { g.setColour (Colours::white.withAlpha (.12f)); g.fillEllipse (r); }
     g.setColour (col::dark);
     const auto c = r.getCentre();
     if (on) g.fillRect (Rectangle<float> (14, 14).withCentre (c));
@@ -103,6 +134,23 @@ void PlayButton::paintButton (Graphics& g, bool over, bool)
         Path p; p.addTriangle (c.x - 6, c.y - 9, c.x - 6, c.y + 9, c.x + 10, c.y);
         g.fillPath (p);
     }
+}
+
+// ---------------------------------------------------------------- Export
+void ExportButton::mouseDrag (const MouseEvent& e)
+{
+    if (dragged || e.getDistanceFromDragStart() < 8 || ! render) return;
+    dragged = true;
+    const auto f = render();
+    if (f.existsAsFile())
+        DragAndDropContainer::performExternalDragDropOfFiles ({ f.getFullPathName() }, false, this);
+}
+
+void ExportButton::clicked()
+{
+    if (dragged || ! render) return;
+    const auto f = render();
+    if (onClickExport) onClickExport (f);
 }
 
 // ---------------------------------------------------------------- Overview
@@ -123,6 +171,18 @@ void OverviewView::refresh()
     repaint();
 }
 
+void OverviewView::drawStatus (Graphics& g)
+{
+    const auto f = fnt (11);
+    const String t = proc.statusText;
+    if (t.isEmpty()) return;
+    const float w = GlyphArrangement::getStringWidth (f, t) + 16;
+    const Rectangle<float> box (6, 6, jmin (w, (float) getWidth() - 12), 18);
+    g.setColour (col::bg.withAlpha (.8f)); g.fillRoundedRectangle (box, 5.f);
+    g.setColour (proc.recording.load() ? col::lane[0] : col::ink); g.setFont (f);
+    g.drawText (t, box.reduced (8, 0).toNearestInt(), Justification::centredLeft, true);
+}
+
 void OverviewView::paint (Graphics& g)
 {
     auto r = getLocalBounds().toFloat();
@@ -130,7 +190,6 @@ void OverviewView::paint (Graphics& g)
     g.fillRoundedRectangle (r, 10.f);
     if (proc.source.empty() || peaks.empty())
     {
-        g.setColour (col::dim); g.setFont (fnt (14));
         drawStatus (g);
         g.setColour (col::dim); g.setFont (fnt (14));
         g.drawText (U8 ("Audiodateien hierher ziehen \xe2\x80\x93 Klopfen, Schl\xc3\xbc" "ssel, Gl\xc3\xa4ser, Stimme"), getLocalBounds(), Justification::centred);
@@ -161,18 +220,6 @@ void OverviewView::paint (Graphics& g)
     drawStatus (g);
 }
 
-void OverviewView::drawStatus (Graphics& g)
-{
-    const auto f = fnt (11);
-    const String t = proc.statusText;
-    if (t.isEmpty()) return;
-    const float w = GlyphArrangement::getStringWidth (f, t) + 16;
-    const Rectangle<float> box (6, 6, jmin (w, (float) getWidth() - 12), 18);
-    g.setColour (col::bg.withAlpha (.8f)); g.fillRoundedRectangle (box, 5.f);
-    g.setColour (proc.recording.load() ? col::lane[0] : col::ink); g.setFont (f);
-    g.drawText (t, box.reduced (8, 0).toNearestInt(), Justification::centredLeft, true);
-}
-
 void OverviewView::mouseDown (const MouseEvent& e)
 {
     const auto set = proc.msgSet;
@@ -201,11 +248,11 @@ void ChipsView::paint (Graphics& g)
         g.setColour (col::panel2); g.fillRoundedRectangle (r, 7.f);
         bool inUse = false; for (int l = 0; l < 5; ++l) inUse |= used[l] == (int) i;
         g.setColour (inUse ? col::ink : col::line); g.drawRoundedRectangle (r.reduced (.5f), 7.f, inUse ? 1.6f : 1.f);
-        drawWave (g, s.data, r.reduced (5, 4).withTrimmedBottom (12), col::cls (s.cls));
-        String lab (kClsNames[s.cls]);
-        if (s.cls == fs::clsTonal) lab << " " << kNoteNames[((int) std::round (s.midi) % 12 + 12) % 12];
+        const size_t n = s.data.size();
+        drawWave (g, s.data, r.reduced (5, 4).withTrimmedBottom (12), col::cls (s.cls),
+                  (size_t) (proc.getTrimStart ((int) i) * (float) n), (size_t) (proc.getTrimEnd ((int) i) * (float) n));
         g.setColour (col::dim); g.setFont (fnt (10));
-        g.drawText (lab, r.withTrimmedTop (r.getHeight() - 14).toNearestInt(), Justification::centred);
+        g.drawText (clsLabel (s), r.withTrimmedTop (r.getHeight() - 14).toNearestInt(), Justification::centred);
     }
 }
 
@@ -217,40 +264,197 @@ void ChipsView::mouseDown (const MouseEvent& e)
         if (chipRect (i).contains (e.position)) { content.chooseSlice (i); return; }
 }
 
+// ---------------------------------------------------------------- SampleEditView
+SampleEditView::SampleEditView (FundstueckProcessor& p, Content& c) : proc (p), content (c)
+{
+    closeBtn.setTooltip (U8 ("Bearbeitung verlassen"));
+    closeBtn.onClick = [this] { setVisible (false); index = -1; };
+    playBtn.setButtonText (U8 ("\xe2\x96\xb6  Anh\xc3\xb6ren"));
+    playBtn.onClick = [this] { proc.audition (index, -1); };
+    resetBtn.setButtonText (U8 ("Zur\xc3\xbc" "cksetzen"));
+    resetBtn.onClick = [this] { ts = 0; te = 1; proc.setTrim (index, ts, te); proc.audition (index, -1); repaint(); };
+    prevBtn.setButtonText (U8 ("\xe2\x97\x80"));
+    nextBtn.setButtonText (U8 ("\xe2\x96\xb6"));
+    prevBtn.onClick = [this] { const int n = proc.msgSet ? (int) proc.msgSet->slices.size() : 0; if (n > 0) { open ((index - 1 + n) % n); proc.audition (index, -1); } };
+    nextBtn.onClick = [this] { const int n = proc.msgSet ? (int) proc.msgSet->slices.size() : 0; if (n > 0) { open ((index + 1) % n); proc.audition (index, -1); } };
+    for (auto* b : { &closeBtn, &playBtn, &resetBtn, &prevBtn, &nextBtn }) addAndMakeVisible (b);
+    for (int l = 0; l < fs::kLanes; ++l)
+    {
+        auto* b = laneBtns.add (new TextButton (kLaneNames[l]));
+        b->setColour (TextButton::buttonOnColourId, col::lane[l]);
+        b->setColour (TextButton::textColourOffId, col::lane[l]);
+        b->onClick = [this, l] { proc.setLaneSlice (l, index); proc.audition (index, l); open (index); };
+        addAndMakeVisible (b);
+    }
+}
+
+void SampleEditView::open (int idx)
+{
+    index = idx;
+    ts = proc.getTrimStart (idx); te = proc.getTrimEnd (idx);
+    for (int l = 0; l < laneBtns.size(); ++l) laneBtns[l]->setToggleState (proc.laneSlice[l].load() == idx, dontSendNotification);
+    setVisible (true);
+    toFront (false);
+    repaint();
+}
+
+void SampleEditView::resized()
+{
+    const int w = getWidth();
+    closeBtn.setBounds (w - 50, 12, 36, 30);
+    nextBtn.setBounds (w - 96, 12, 36, 30);
+    prevBtn.setBounds (w - 136, 12, 36, 30);
+    waveR = { 20, 66, w - 40, 390 };
+    playBtn.setBounds (20, 482, 140, 32);
+    resetBtn.setBounds (166, 482, 140, 32);
+    for (int l = 0; l < laneBtns.size(); ++l) laneBtns[l]->setBounds (430 + l * 124, 482, 118, 32);
+}
+
+float SampleEditView::xToFrac (float x) const { return jlimit (0.f, 1.f, (x - (float) waveR.getX()) / (float) waveR.getWidth()); }
+float SampleEditView::fracToX (float f) const { return (float) waveR.getX() + f * (float) waveR.getWidth(); }
+
+void SampleEditView::paint (Graphics& g)
+{
+    auto r = getLocalBounds().toFloat();
+    g.setColour (col::panel); g.fillRoundedRectangle (r, 14.f);
+    g.setColour (col::line); g.drawRoundedRectangle (r.reduced (.5f), 14.f, 1.f);
+    const auto set = proc.msgSet;
+    if (! set || index < 0 || index >= (int) set->slices.size()) return;
+    const auto& s = set->slices[(size_t) index];
+    const double sr = set->sampleRate;
+    const double dur = (double) s.data.size() / sr;
+
+    g.setColour (col::ink); g.setFont (fnt (16, true));
+    g.drawText ("Schnipsel " + String (index + 1) + " / " + String ((int) set->slices.size()), 20, 12, 220, 30, Justification::centredLeft);
+    g.setColour (col::cls (s.cls)); g.setFont (fnt (14));
+    g.drawText (clsLabel (s) + U8 (" \xc2\xb7 ") + String (roundToInt (dur * 1000.0)) + " ms", 220, 12, 300, 30, Justification::centredLeft);
+
+    g.setColour (col::panel2); g.fillRoundedRectangle (waveR.toFloat(), 10.f);
+    drawWave (g, s.data, waveR.toFloat().reduced (0, 12), col::cls (s.cls));
+    const float xs = fracToX (ts), xe = fracToX (te);
+    g.setColour (Colours::black.withAlpha (.6f));
+    g.fillRect (Rectangle<float>::leftTopRightBottom ((float) waveR.getX(), (float) waveR.getY(), xs, (float) waveR.getBottom()));
+    g.fillRect (Rectangle<float>::leftTopRightBottom (xe, (float) waveR.getY(), (float) waveR.getRight(), (float) waveR.getBottom()));
+
+    auto handle = [&] (float x, const String& lab, Colour c, bool left)
+    {
+        g.setColour (c); g.fillRect (x - 1.f, (float) waveR.getY(), 2.f, (float) waveR.getHeight());
+        const Rectangle<float> flag (left ? x : x - 52.f, (float) waveR.getY(), 52.f, 20.f);
+        g.fillRoundedRectangle (flag, 4.f);
+        g.setColour (col::dark); g.setFont (fnt (10, true));
+        g.drawText (lab, flag.toNearestInt(), Justification::centred);
+    };
+    handle (xs, "START", col::lane[4], true);
+    handle (xe, "ENDE", col::lane[0], false);
+
+    g.setFont (fnt (12)); g.setColour (col::dim);
+    g.drawText (String (roundToInt (ts * dur * 1000.0)) + " ms", jlimit (waveR.getX(), waveR.getRight() - 80, (int) xs - 40), waveR.getBottom() + 4, 80, 16, Justification::centred);
+    g.drawText (String (roundToInt (te * dur * 1000.0)) + " ms", jlimit (waveR.getX(), waveR.getRight() - 80, (int) xe - 40), waveR.getBottom() + 4, 80, 16, Justification::centred);
+    g.setColour (col::dim); g.setFont (fnt (11));
+    g.drawText (U8 ("AUF SPUR LEGEN"), 320, 482, 104, 32, Justification::centredRight);
+    g.setColour (col::ink); g.setFont (fnt (13));
+    g.drawText (U8 ("L\xc3\xa4nge: ") + String (roundToInt ((te - ts) * dur * 1000.0)) + " ms", 20, 530, 300, 20, Justification::centredLeft);
+    g.setColour (col::dim); g.setFont (fnt (12));
+    g.drawText (U8 ("Griffe ziehen oder in die Wellenform klicken \xc2\xb7 Doppelklick setzt zur\xc3\xbc" "ck \xc2\xb7 X schlie\xc3\x9f" "t die Bearbeitung"),
+                20, 556, getWidth() - 40, 20, Justification::centredLeft);
+}
+
+void SampleEditView::mouseMove (const MouseEvent& e)
+{
+    const bool near = waveR.contains (e.position.toInt())
+                      && (std::abs (e.position.x - fracToX (ts)) < 10 || std::abs (e.position.x - fracToX (te)) < 10);
+    setMouseCursor (near ? MouseCursor::LeftRightResizeCursor : MouseCursor::NormalCursor);
+}
+
+void SampleEditView::mouseDown (const MouseEvent& e)
+{
+    if (! waveR.expanded (0, 22).contains (e.position.toInt())) return;
+    const float x = e.position.x;
+    dragging = std::abs (x - fracToX (ts)) <= std::abs (x - fracToX (te)) ? 1 : 2;
+    mouseDrag (e);
+}
+
+void SampleEditView::mouseDrag (const MouseEvent& e)
+{
+    if (dragging == 0) return;
+    const float f = xToFrac (e.position.x);
+    if (dragging == 1) ts = jlimit (0.f, te - 0.02f, f);
+    else te = jlimit (ts + 0.02f, 1.f, f);
+    repaint();
+}
+
+void SampleEditView::mouseUp (const MouseEvent&)
+{
+    if (dragging == 0) return;
+    dragging = 0;
+    proc.setTrim (index, ts, te);
+    proc.audition (index, -1);
+}
+
+void SampleEditView::mouseDoubleClick (const MouseEvent& e)
+{
+    if (! waveR.contains (e.position.toInt())) return;
+    ts = 0; te = 1;
+    proc.setTrim (index, ts, te);
+    repaint();
+}
+
 // ---------------------------------------------------------------- LaneRow
 LaneRow::LaneRow (FundstueckProcessor& p, Content& c, int l) : proc (p), content (c), lane (l)
 {
-    const String id[5] = { "kick", "snare", "hat", "perc", "mel" };
-    for (auto* s : { &vol, &tune, &len })
+    const String id (kLaneIds[l]);
+    auto knob = [&] (Slider& s, const String& pid, std::unique_ptr<AudioProcessorValueTreeState::SliderAttachment>& att)
     {
-        s->setSliderStyle (Slider::LinearBar);
-        s->setTextBoxStyle (Slider::TextBoxLeft, false, 50, 18);
-        s->setColour (Slider::trackColourId, col::lane[l]);
-        s->setColour (Slider::backgroundColourId, Colour (0x22000000));
-        addAndMakeVisible (*s);
-    }
-    aVol = std::make_unique<AudioProcessorValueTreeState::SliderAttachment> (p.apvts, id[l] + "_vol", vol);
-    aTune = std::make_unique<AudioProcessorValueTreeState::SliderAttachment> (p.apvts, id[l] + "_tune", tune);
-    aLen = std::make_unique<AudioProcessorValueTreeState::SliderAttachment> (p.apvts, id[l] + "_len", len);
-    mute.setClickingTogglesState (true);
-    mute.setColour (TextButton::buttonOnColourId, col::dim);
-    mute.setTooltip ("Stumm");
-    addAndMakeVisible (mute);
-    aMute = std::make_unique<AudioProcessorValueTreeState::ButtonAttachment> (p.apvts, id[l] + "_mute", mute);
+        s.setSliderStyle (Slider::RotaryHorizontalVerticalDrag);
+        s.setTextBoxStyle (Slider::NoTextBox, false, 0, 0);
+        s.setColour (Slider::trackColourId, col::lane[l]);
+        s.setPopupDisplayEnabled (true, true, &content);
+        s.setMouseDragSensitivity (160);
+        addAndMakeVisible (s);
+        att = std::make_unique<AudioProcessorValueTreeState::SliderAttachment> (p.apvts, id + pid, s);
+        if (auto* prm = p.apvts.getParameter (id + pid))
+            s.setDoubleClickReturnValue (true, prm->convertFrom0to1 (prm->getDefaultValue()));
+    };
+    knob (vol, "_vol", aVol);
+    knob (tune, "_tune", aTune);
+    knob (atk, "_atk", aAtk);
+    knob (dec, "_len", aDec);
+    knob (len, "_steps", aLen);
+    vol.setTooltip (U8 ("Lautst\xc3\xa4rke")); tune.setTooltip (U8 ("Tonh\xc3\xb6he (Halbt\xc3\xb6ne)"));
+    atk.setTooltip ("Attack: Einschwingzeit"); dec.setTooltip (U8 ("Decay: Ausklingen (Anteil der Schnipsel-L\xc3\xa4nge)"));
+    len.setTooltip (U8 ("Spurl\xc3\xa4nge 1/16 \xe2\x80\xa6 16/16 (wirkt, wenn P = Polymeter an ist)"));
+
+    auto toggle = [&] (TextButton& b, const String& pid, Colour on, const String& tip, std::unique_ptr<AudioProcessorValueTreeState::ButtonAttachment>& att)
+    {
+        b.setClickingTogglesState (true);
+        b.setColour (TextButton::buttonOnColourId, on);
+        b.setTooltip (tip);
+        addAndMakeVisible (b);
+        att = std::make_unique<AudioProcessorValueTreeState::ButtonAttachment> (p.apvts, id + pid, b);
+    };
+    toggle (solo, "_solo", col::lane[1], "Solo", aSolo);
+    toggle (mute, "_mute", col::dim, "Mute", aMute);
+    toggle (poly, "_poly", col::lane[l], U8 ("Polymeter: Spur l\xc3\xa4uft mit eigener L\xc3\xa4nge (Regler rechts)"), aPoly);
+    poly.onStateChange = [this] { len.getProperties().set ("dimmed", ! poly.getToggleState()); len.repaint(); repaint(); };
+    len.onValueChange = [this] { repaint(); };
+    len.getProperties().set ("dimmed", ! poly.getToggleState());
 }
 
 void LaneRow::resized()
 {
     const int h = getHeight();
-    nameR = { 10, 0, 74, h };
-    thumbR = { 86, (h - 30) / 2, 66, 30 };
-    upR = { 156, h / 2 - 13, 16, 13 };
-    downR = { 156, h / 2, 16, 13 };
-    vol.setBounds (180, 21, 52, 18);
-    tune.setBounds (238, 21, 52, 18);
-    len.setBounds (296, 21, 52, 18);
-    mute.setBounds (356, (h - 26) / 2, 26, 26);
-    stepsR = { 394, 5, getWidth() - 394 - 8, h - 10 };
+    nameR = { 10, 0, 68, h };
+    thumbR = { 78, (h - 30) / 2, 58, 30 };
+    upR = { 139, h / 2 - 13, 14, 13 };
+    downR = { 139, h / 2, 14, 13 };
+    const int kx[4] = { 158, 196, 234, 272 };
+    Slider* ks[4] = { &vol, &tune, &atk, &dec };
+    for (int i = 0; i < 4; ++i) ks[i]->setBounds (kx[i], 1, 36, 32);
+    solo.setBounds (314, 11, 24, 24);
+    mute.setBounds (340, 11, 24, 24);
+    poly.setBounds (366, 11, 24, 24);
+    len.setBounds (396, 1, 36, 32);
+    stepsR = { 440, 5, getWidth() - 440 - 8, h - 10 };
 }
 
 Rectangle<float> LaneRow::stepRect (int s) const
@@ -280,28 +484,40 @@ void LaneRow::paint (Graphics& g)
     const auto set = proc.msgSet;
     const int si = proc.laneSlice[lane].load();
     if (set && si >= 0 && si < (int) set->slices.size())
-        drawWave (g, set->slices[(size_t) si].data, thumbR.toFloat().reduced (3, 2), c);
+    {
+        const auto& sl = set->slices[(size_t) si];
+        const size_t n = sl.data.size();
+        drawWave (g, sl.data, thumbR.toFloat().reduced (3, 2), c, (size_t) (proc.getTrimStart (si) * (float) n), (size_t) (proc.getTrimEnd (si) * (float) n));
+    }
 
     g.setColour (col::dim);
     Path up; up.addTriangle ((float) upR.getCentreX() - 4, (float) upR.getBottom() - 3, (float) upR.getCentreX() + 4, (float) upR.getBottom() - 3, (float) upR.getCentreX(), (float) upR.getY() + 3);
     Path dn; dn.addTriangle ((float) downR.getCentreX() - 4, (float) downR.getY() + 3, (float) downR.getCentreX() + 4, (float) downR.getY() + 3, (float) downR.getCentreX(), (float) downR.getBottom() - 3);
     g.fillPath (up); g.fillPath (dn);
 
-    g.setFont (fnt (9)); g.setColour (col::dim);
-    g.drawText ("VOL", vol.getBounds().withY (5).withHeight (14), Justification::centred);
-    g.drawText ("TUNE", tune.getBounds().withY (5).withHeight (14), Justification::centred);
-    g.drawText (U8 ("L\xc3\x84NGE"), len.getBounds().withY (5).withHeight (14), Justification::centred);
+    const int L = proc.laneLength (lane);
+    g.setFont (fnt (8.5f)); g.setColour (col::dim);
+    const char* labs[4] = { "VOL", "TUNE", "ATTACK", "DECAY" };
+    Slider* ks[4] = { &vol, &tune, &atk, &dec };
+    for (int i = 0; i < 4; ++i) g.drawText (labs[i], ks[i]->getX() - 4, 33, 44, 12, Justification::centred);
+    g.setColour (poly.getToggleState() ? c : col::dim);
+    g.drawText (poly.getToggleState() ? String (L) + "/16" : String ("STEPS"), len.getX() - 4, 33, 44, 12, Justification::centred);
 
     const int now = proc.currentStep.load();
+    const int cur = now >= 0 ? now % L : -1;
     for (int s = 0; s < 16; ++s)
     {
         auto sr = stepRect (s);
         const int v = proc.steps[lane][s].load();
         const bool on = lane == fs::kMel ? v >= 0 : v != 0;
-        g.setColour (on ? c : Colours::white.withAlpha (s % 4 == 0 ? .09f : .05f));
+        const bool inside = s < L;
+        Colour fill = on ? c : Colours::white.withAlpha (s % 4 == 0 ? .09f : .05f);
+        if (! inside) fill = on ? c.withAlpha (.22f) : Colours::white.withAlpha (.015f);
+        g.setColour (fill);
         g.fillRoundedRectangle (sr, 6.f);
-        if (s == now) { g.setColour (col::ink); g.drawRoundedRectangle (sr.reduced (1), 6.f, 2.f); }
-        g.setColour (col::dark);
+        if (! inside) { g.setColour (col::line); g.drawRoundedRectangle (sr.reduced (.5f), 6.f, 1.f); }
+        if (s == cur) { g.setColour (col::ink); g.drawRoundedRectangle (sr.reduced (1), 6.f, 2.f); }
+        g.setColour (inside ? col::dark : col::dim);
         if (lane == fs::kMel && on)
         {
             g.setFont (fnt (11, true));
@@ -321,7 +537,6 @@ void LaneRow::mouseDown (const MouseEvent& e)
     if (nameR.contains (p.toInt()))
     {
         content.armed = content.armed == lane ? -1 : lane;
-        if (auto* par = getParentComponent()) par->repaint();
         for (auto* sib : getParentComponent()->getChildren()) if (dynamic_cast<LaneRow*> (sib) != nullptr) sib->repaint();
         return;
     }
@@ -335,6 +550,12 @@ void LaneRow::mouseDown (const MouseEvent& e)
     else if (e.mods.isPopupMenu() || e.mods.isAltDown()) mod = -1;
     proc.stepClick (lane, s, mod);
     repaint();
+}
+
+void LaneRow::mouseDoubleClick (const MouseEvent& e)
+{
+    if (thumbR.contains (e.position.toInt()) && proc.laneSlice[lane].load() >= 0)
+        content.openEditor (proc.laneSlice[lane].load());
 }
 
 void LaneRow::mouseWheelMove (const MouseEvent& e, const MouseWheelDetails& w)
@@ -362,7 +583,7 @@ void Content::bigSlider (Slider& s, const char* id, std::unique_ptr<AudioProcess
     if (id != nullptr) att = std::make_unique<AudioProcessorValueTreeState::SliderAttachment> (proc.apvts, id, s);
 }
 
-Content::Content (FundstueckProcessor& p) : proc (p), overview (p, *this), chips (p, *this)
+Content::Content (FundstueckProcessor& p) : proc (p), overview (p, *this), chips (p, *this), editor (p, *this)
 {
     setLookAndFeel (&look);
     addAndMakeVisible (play);
@@ -409,12 +630,26 @@ Content::Content (FundstueckProcessor& p) : proc (p), overview (p, *this), chips
     demoBtn.setColour (TextButton::buttonColourId, col::ink);
     demoBtn.setColour (TextButton::textColourOffId, col::dark);
 
+    exportBtn.setButtonText (U8 ("\xe2\x86\x93  Export  (ziehen \xe2\x86\x92 Ableton)"));
+    exportBtn.setTooltip (U8 ("Rendert den kompletten Loop bis zur Wiederholung als WAV. Klicken: speichern + im Finder zeigen. Ziehen: direkt auf eine Ableton-Spur ablegen."));
+    exportBtn.setColour (TextButton::buttonColourId, col::lane[2].withAlpha (.25f));
+    exportBtn.render = [this]
+    {
+        String info;
+        const auto f = proc.exportLoop (info);
+        proc.statusText = info;
+        proc.bump();
+        return f;
+    };
+    exportBtn.onClickExport = [] (const File& f) { if (f.existsAsFile()) f.revealToUser(); };
+    addAndMakeVisible (exportBtn);
+
     for (int i = 0; i < 6; ++i)
     {
         auto* b = styleBtns.add (new TextButton (fs::kStyles[i].name));
         b->setRadioGroupId (101);
         b->setClickingTogglesState (true);
-        b->onClick = [this, i] { if (proc.style != i || ! styleBtns[i]->getToggleState()) {} proc.setStyle (i); syncControls(); };
+        b->onClick = [this, i] { proc.setStyle (i); syncControls(); };
         addAndMakeVisible (b);
     }
     for (int i = 0; i < 12; ++i) rootBox.addItem (kNoteNames[i], i + 1);
@@ -426,6 +661,7 @@ Content::Content (FundstueckProcessor& p) : proc (p), overview (p, *this), chips
     addAndMakeVisible (overview);
     addAndMakeVisible (chips);
     for (int l = 0; l < fs::kLanes; ++l) addAndMakeVisible (lanes.add (new LaneRow (proc, *this, l)));
+    addChildComponent (editor);
 
    #if JucePlugin_Build_Standalone
     // Standalone: Eingang nicht stummschalten (das Plugin gibt den Eingang nie auf den Ausgang)
@@ -470,22 +706,25 @@ void Content::resized()
     dens.setBounds (860, 320, 140, 24);
     rootBox.setBounds (216, 356, 62, 28);
     scaleBox.setBounds (284, 356, 124, 28);
-    int x = 430;
+    int x = 424;
     for (auto* b : { &rollAll, &rollDrums, &rollMel, &rollSounds, &clearBtn })
     {
-        const int w = b == &rollAll ? 130 : 86;
+        const int w = b == &rollAll ? 120 : 74;
         b->setBounds (x, 356, w, 28); x += w + 6;
     }
+    exportBtn.setBounds (850, 356, 220, 28);
 
     // 3 Sequencer
     for (int l = 0; l < lanes.size(); ++l) lanes[l]->setBounds (26, 436 + l * 51, 1048, 47);
+
+    // Schnipsel-Bearbeitung liegt ueber den Bereichen 1-3
+    editor.setBounds (16, 70, 1068, 622);
     overview.refresh();
 }
 
 void Content::paint (Graphics& g)
 {
     g.fillAll (col::bg);
-    // Kopf
     {
         const auto f = fnt (30, true);
         const int wFund = (int) std::ceil (GlyphArrangement::getStringWidth (f, "Fund"));
@@ -518,7 +757,7 @@ void Content::paint (Graphics& g)
         g.setColour (col::ink); g.setFont (fnt (13, true));
         g.drawText (hb > 0 ? String (hb, hb == std::floor (hb) ? 0 : 1) + " BPM" : U8 ("\xe2\x80\x93 BPM"), r.toNearestInt(), Justification::centred);
     }
-    // Panels
+
     auto panel = [&g] (Rectangle<int> r, const char* num, const String& title)
     {
         g.setColour (col::panel); g.fillRoundedRectangle (r.toFloat(), 14.f);
@@ -532,8 +771,8 @@ void Content::paint (Graphics& g)
     panel (L::sec1, "1", U8 ("GER\xc3\x84USCHE SAMMELN"));
     panel (L::sec2, "2", "GROOVE");
     panel (L::sec3, "3", "SEQUENCER");
-    // Eingangspegel
-    {
+
+    {   // Eingangspegel
         auto m = meterR.toFloat();
         g.setColour (col::panel2); g.fillRoundedRectangle (m, 4.f);
         const float lvl = jlimit (0.f, 1.f, shownLevel);
@@ -544,20 +783,25 @@ void Content::paint (Graphics& g)
         g.drawText ("IN", meterR.translated (meterR.getWidth() + 4, 0).withWidth (20), Justification::centredLeft);
     }
 
-
     g.setFont (fnt (10)); g.setColour (col::dim);
     g.drawText ("EMPFINDLICHKEIT", 744, 80, 110, 24, Justification::centredRight);
     g.drawText ("DICHTE", 790, 320, 64, 24, Justification::centredRight);
     g.drawText ("TONART", 150, 356, 60, 28, Justification::centredLeft);
     g.setFont (fnt (12));
-    g.drawText (U8 ("Spurnamen anklicken, dann Schnipsel w\xc3\xa4hlen \xc2\xb7 Hats: mehrfach klicken = Wirbel \xc2\xb7 Melodie: Mausrad / Shift / Rechtsklick"),
-                250, 412, 824, 20, Justification::centredRight, true);
+    g.drawText (U8 ("Schnipsel anklicken = bearbeiten \xc2\xb7 Spurname anklicken, dann Schnipsel = zuweisen \xc2\xb7 Hats: mehrfach klicken = Wirbel \xc2\xb7 P = Polymeter"),
+                220, 412, 854, 20, Justification::centredRight, true);
 }
 
 void Content::chooseSlice (int i)
 {
     if (armed >= 0) { proc.setLaneSlice (armed, i); proc.audition (i, armed); }
     else proc.audition (i, -1);
+    openEditor (i);
+}
+
+void Content::openEditor (int i)
+{
+    editor.open (i);
 }
 
 void Content::openFileChooser()
@@ -588,8 +832,14 @@ void Content::timerCallback()
         chips.repaint();
         for (auto* l : lanes) l->repaint();
         syncControls();
-        overview.repaint();
+        if (editor.isVisible())
+        {
+            const int n = proc.msgSet ? (int) proc.msgSet->slices.size() : 0;
+            if (editor.index >= n) { editor.setVisible (false); editor.index = -1; }
+            else editor.repaint();
+        }
     }
+
     // Aufnahme
     if (proc.recFull.load()) proc.stopRecording();
     const bool rec = proc.recording.load();
@@ -620,10 +870,8 @@ void Content::timerCallback()
 
     const int st = proc.currentStep.load();
     if (st != seenStep) { seenStep = st; for (auto* l : lanes) l->repaint(); }
-    const bool host = proc.hostPlaying.load();
-    play.on = host || proc.internalPlay.load();
+    play.on = proc.hostPlaying.load() || proc.internalPlay.load();
     play.repaint();
-    if (host != seenHost) { seenHost = host; repaint (Rectangle<int> (240, 0, 860, 70)); }
 }
 
 // ---------------------------------------------------------------- Editor

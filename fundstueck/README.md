@@ -30,7 +30,9 @@ xattr -dr com.apple.quarantine ~/Library/Audio/Plug-Ins/VST3/Fundstueck.vst3 ~/L
 |---|---|
 | **1 Geräusche sammeln** | *Demo-Geräusche* oder *Datei laden…* (WAV, AIFF, MP3, M4A/Sprachmemo, FLAC, CAF), auch per Drag & Drop. *Empfindlichkeit* bestimmt, wie viele Schnipsel erkannt werden. Klick auf Wellenform oder Schnipsel = vorhören. |
 | **2 Groove** | Stile Boom Bap, House, Trap, Afro, Lo-Fi, Breakbeat · *Dichte* · Tonart/Tonleiter · Würfeln (alles, nur Drums, nur Melodie, nur Sounds). |
-| **3 Sequencer** | 16 Schritte × 5 Spuren. Spurnamen anklicken → Schnipsel anklicken = Sound tauschen. ▲▼ blättert durch die Schnipsel. Hats: mehrfach klicken = Wirbel (2×/3×). Melodie: Mausrad, Shift-Klick (hoch), Rechtsklick (runter). |
+| **Schnipsel bearbeiten** | Ein Schnipsel (oder Doppelklick aufs Spur-Vorschaubild) öffnet es groß: START/ENDE-Griffe ziehen, ◀ ▶ blättern, „Auf Spur legen“, **X** schließt. |
+| **3 Sequencer** | 16 Schritte × 5 Spuren. Pro Spur Drehregler **Vol · Tune · Attack · Decay** (in Ableton mapp-/automatisierbar, Doppelklick = Standardwert), **S** Solo, **M** Mute, **P** Polymeter + Regler **Steps** (1/16 … 16/16 – eigene Spurlänge für Polyrhythmen). ▲▼ blättert durch die Schnipsel. Hats: mehrfach klicken = Wirbel (2×/3×). Melodie: Mausrad, Shift-Klick (hoch), Rechtsklick (runter). |
+| **Export** | Rendert den kompletten Loop, bis sich alle Spuren wiederholen (z. B. 16 + 3/16 → 3 Takte), als 24-bit-WAV nach *Musik/Fundstueck Exporte*. **Klicken** = speichern + im Finder zeigen, **Ziehen** = direkt auf eine Ableton-Spur ablegen. |
 | **Kopfzeile** | Play (intern) · Tempo · Swing · Feel (menschliche Ungenauigkeit) · Raum · Tape · Sub-Kick · Master |
 
 - **Host-Sync:** Standardmäßig aus – Fundstück läuft dann mit eigenem Tempo über den Play-Knopf.
