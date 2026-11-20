@@ -1,0 +1,37 @@
+GRIDS 8 – Installation (macOS, Apple Silicon und Intel)
+=======================================================
+
+1. Terminal öffnen (Programme > Dienstprogramme > Terminal) und eingeben:
+
+     bash ~/Downloads/Grids8/Installieren.command
+
+   (Pfad anpassen, falls der Ordner woanders liegt. Ordner einfach ins
+   Terminal-Fenster ziehen, dann "/Installieren.command" anhängen.)
+
+2. Ableton Live neu starten. In Einstellungen > Plug-Ins:
+   - "Plug-In-Quellen: VST3 (System-Ordner)" bzw. "Audio Units" einschalten
+   - "Neu scannen"
+
+3. Grids 8 liegt unter Plug-Ins > donkirschbaum > Grids 8 (Instrument).
+
+SLOTS IN DEN DRUM RACK ZIEHEN
+- Grids 8 auf eine MIDI-Spur legen und Play drücken. Alle 8 Slots nehmen
+  automatisch die letzten 1/2/4/8/16 Takte auf (Länge pro Slot wählbar).
+- "Halten" friert einen Slot ein.
+- Chip "DRUM RACK ZIEHEN" anfassen und auf eine MIDI-Spur mit Drum Rack
+  (Clip-Slot oder Arrangement) ziehen. Noten liegen auf C1–G1 (36–43),
+  also Pad 1–8 in der Reihenfolge Kick, Clap, Hat 1, Hat 2, Snare, Tom 1,
+  Tom 2, Conga. Die Samples dafür liegen im Ordner "Samples".
+- "8 SPUREN ZIEHEN" erzeugt eine MIDI-Datei mit 8 getrennten Spuren
+  (in die Arrangement-Ansicht ziehen).
+- Parameter-Bewegungen stecken als CC-Hüllkurven im Clip:
+  Master X/Y = CC16/17, Spur X = CC20–27, Y = CC30–37, Dichte = CC40–47.
+
+LIVE-MIDI AUS DEM PLUGIN
+- Neue MIDI-Spur anlegen, "MIDI From" = Spur mit Grids 8, darunter
+  "Grids 8" wählen, Monitor "In". Unter MIDI & Optionen lässt sich
+  "Interne Sounds" abschalten, dann ist Grids 8 ein reiner MIDI-Generator.
+
+SYNC
+- Grids 8 folgt automatisch Tempo, Start/Stop und Songposition von Ableton.
+- Alle Regler sind als Parameter automatisierbar.
