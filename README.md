@@ -24,5 +24,8 @@ cmake --build build --config Release -j 8
 ```
 Benötigt Xcode-Kommandozeilenwerkzeuge und CMake ≥ 3.22.
 
+## Presets
+128 Werks-Presets der Shruthi-1-Firmware und 228 Community-Patches aus dem Mutable-Instruments-Forum (gesammelt in https://github.com/joegiralt/ambika-shruthi-instruments). Die Urheber stehen in den Kategorienamen.
+
 ## Lizenz
 GPL v3.0 – siehe `LICENSE`. Werksdaten aus der Shruthi-1-Firmware von Émilie Gillet / Mutable Instruments.
