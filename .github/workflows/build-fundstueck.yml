@@ -38,8 +38,9 @@ jobs:
       - name: Sign (ad-hoc) and package
         run: |
           set -e
+          exec > >(tee -a build.log) 2>&1
           A=build/Fundstueck_artefacts/Release
-          ls -R "$A" | head -50
+          ls "$A" "$A"/*
           for b in "$A/VST3/Fundstueck.vst3" "$A/AU/Fundstueck.component" "$A/Standalone/Fundstueck.app"; do
             codesign --force --deep --sign - "$b"
           done
