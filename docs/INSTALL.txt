@@ -1,0 +1,29 @@
+MIKROKORN – Installation (macOS)
+================================
+
+Einfachster Weg: den Installer "MIKROKORN-...-macOS-Installer.pkg" benutzen.
+  1. Rechtsklick auf die .pkg-Datei -> "Öffnen" -> "Öffnen" bestätigen
+     (nötig, weil das Plugin nicht bei Apple notarisiert ist).
+     Falls macOS es trotzdem blockiert: Systemeinstellungen -> Datenschutz & Sicherheit
+     -> unten "Dennoch öffnen".
+  2. Installer durchklicken (Admin-Passwort). Plugins landen in
+       /Library/Audio/Plug-Ins/VST3/MIKROKORN.vst3
+       /Library/Audio/Plug-Ins/Components/MIKROKORN.component
+
+Manuell (ZIP):
+  1. MIKROKORN.vst3 nach ~/Library/Audio/Plug-Ins/VST3/ kopieren,
+     MIKROKORN.component nach ~/Library/Audio/Plug-Ins/Components/
+  2. Terminal öffnen und die Quarantäne entfernen:
+       xattr -dr com.apple.quarantine ~/Library/Audio/Plug-Ins/VST3/MIKROKORN.vst3
+       xattr -dr com.apple.quarantine ~/Library/Audio/Plug-Ins/Components/MIKROKORN.component
+
+Ableton Live:
+  - Einstellungen -> Plug-Ins -> "Plug-In-Quellen": VST3 (und Audio Units) einschalten,
+    dann "Erneut scannen".
+  - MIKROKORN erscheint im Browser unter Plug-Ins -> donkirschbaum.
+  - Auf eine MIDI-Spur ziehen und spielen.
+
+Eigene Samples & Presets:
+  - Werden gespeichert in  ~/Music/MIKROKORN/Samples  und  ~/Music/MIKROKORN/Presets
+  - Audiodateien einfach auf das Plugin ziehen oder "+ Importieren" klicken.
+  - Mit "Als Preset speichern" landen Sample + Einstellungen unter "Eigene Presets".
