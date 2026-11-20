@@ -1,0 +1,89 @@
+name: Drone Acht macOS-Build
+
+on:
+  push:
+    branches: [ drone-acht ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  build:
+    runs-on: macos-14
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Werkzeuge
+        run: brew install ninja
+
+      - name: Konfigurieren und bauen
+        run: |
+          set -o pipefail
+          cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release 2>&1 | tee build.log
+          cmake --build build --config Release -j 4 2>&1 | tee -a build.log
+
+      - name: Audio Unit pruefen
+        run: |
+          killall -9 AudioComponentRegistrar 2>/dev/null || true
+          sleep 2
+          if auval -v aumu Drn8 Dach > auval.log 2>&1; then echo "AU-Validierung: bestanden." > auval-result.txt; else echo "AU-Validierung: nicht bestanden." > auval-result.txt; fi
+          tail -n 5 auval.log
+          cat auval-result.txt
+
+      - name: Signieren und verpacken
+        run: |
+          A=build/DroneAcht_artefacts/Release
+          mkdir -p "out/Drone Acht"
+          cp -R "$A/VST3/Drone Acht.vst3" "out/Drone Acht/"
+          cp -R "$A/AU/Drone Acht.component" "out/Drone Acht/"
+          cp -R "$A/Standalone/Drone Acht.app" "out/Drone Acht/"
+          for b in "out/Drone Acht/"*; do codesign --force --deep -s - "$b"; done
+          cat > "out/Drone Acht/Installieren.command" <<'EOF'
+          #!/bin/bash
+          # Kopiert Drone Acht in die Plug-In-Ordner und hebt die Download-Sperre auf.
+          cd "$(dirname "$0")"
+          VST3="$HOME/Library/Audio/Plug-Ins/VST3"
+          AU="$HOME/Library/Audio/Plug-Ins/Components"
+          mkdir -p "$VST3" "$AU"
+          rm -rf "$VST3/Drone Acht.vst3" "$AU/Drone Acht.component"
+          cp -R "Drone Acht.vst3" "$VST3/"
+          cp -R "Drone Acht.component" "$AU/"
+          xattr -dr com.apple.quarantine "$VST3/Drone Acht.vst3" "$AU/Drone Acht.component" "Drone Acht.app" 2>/dev/null
+          killall -9 AudioComponentRegistrar 2>/dev/null
+          echo ""
+          echo "Drone Acht ist installiert:"
+          echo "  VST3: $VST3/Drone Acht.vst3"
+          echo "  AU:   $AU/Drone Acht.component"
+          echo "Starte deine DAW neu und lass sie nach Plug-ins suchen."
+          EOF
+          chmod +x "out/Drone Acht/Installieren.command"
+          head -n 3 "out/Drone Acht/Installieren.command"
+          cp README.md "out/Drone Acht/LIESMICH.md"
+          cd out && ditto -c -k --keepParent "Drone Acht" ../DroneAcht-macOS.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DroneAcht-macOS
+          path: DroneAcht-macOS.zip
+
+      - name: Release veroeffentlichen
+        run: |
+          TAG="drone-acht-v1.1.${GITHUB_RUN_NUMBER}"
+          NOTES="Mac-Build (Universal: Apple Silicon + Intel, ab macOS 11): VST3, AU und Standalone-App. $(cat auval-result.txt) Installation: ZIP entpacken, Rechtsklick auf Installieren.command, Öffnen."
+          gh release create "$TAG" DroneAcht-macOS.zip --repo "$GITHUB_REPOSITORY" --title "Drone Acht 1.1.${GITHUB_RUN_NUMBER} (Mac)" --target "$GITHUB_SHA" --notes "$NOTES"
+
+      - name: Fehler melden
+        if: failure()
+        run: |
+          {
+            echo "Der Mac-Build ist fehlgeschlagen (Lauf ${GITHUB_RUN_NUMBER})."
+            echo
+            echo '```'
+            tail -n 120 build.log 2>/dev/null || echo "kein Build-Log"
+            echo '```'
+          } > issue.md
+          gh issue create --repo "$GITHUB_REPOSITORY" --title "Drone Acht: Build fehlgeschlagen (Lauf ${GITHUB_RUN_NUMBER})" --body-file issue.md
