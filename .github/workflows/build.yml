@@ -2,8 +2,13 @@ name: build
 
 on:
   push:
+    branches: [anu-vst]
+    tags: ['v*']
   pull_request:
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   linux:
@@ -16,10 +21,15 @@ jobs:
           sudo apt-get install -y libgl-dev libx11-dev libxext-dev libxrandr-dev libxcursor-dev libdbus-1-dev libjack-jackd2-dev
       - name: Build
         run: make -j4 && mkdir -p build && make test
+      - name: Package
+        run: |
+          mkdir -p Anu-linux-x64
+          cp -r bin/Anu.vst3 bin/Anu.clap bin/Anu.lv2 bin/Anu README.md LICENSE Anu-linux-x64/
+          zip -qr Anu-linux-x64.zip Anu-linux-x64
       - uses: actions/upload-artifact@v4
         with:
           name: Anu-linux-x64
-          path: bin/
+          path: Anu-linux-x64.zip
 
   windows:
     runs-on: ubuntu-22.04
@@ -29,10 +39,15 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y mingw-w64
       - name: Build
         run: make -j4 windows
+      - name: Package
+        run: |
+          mkdir -p Anu-windows-x64
+          cp -r bin/Anu.vst3 bin/Anu.clap bin/Anu.exe README.md LICENSE Anu-windows-x64/
+          zip -qr Anu-windows-x64.zip Anu-windows-x64
       - uses: actions/upload-artifact@v4
         with:
           name: Anu-windows-x64
-          path: bin/
+          path: Anu-windows-x64.zip
 
   macos:
     runs-on: macos-latest
@@ -45,7 +60,48 @@ jobs:
           codesign --force --deep -s - bin/Anu.vst3 || true
           codesign --force --deep -s - bin/Anu.clap || true
           codesign --force --deep -s - bin/Anu.component || true
+      - name: Check contents
+        run: |
+          ls -la bin
+          lipo -info bin/Anu.vst3/Contents/MacOS/* || true
+          test -d bin/Anu.vst3
+      - name: Package
+        run: |
+          mkdir -p Anu-macOS
+          cp -R bin/Anu.vst3 bin/Anu.clap Anu-macOS/
+          [ -d bin/Anu.component ] && cp -R bin/Anu.component Anu-macOS/ || true
+          [ -d bin/Anu.app ] && cp -R bin/Anu.app Anu-macOS/ || true
+          cp README.md LICENSE Anu-macOS/
+          ditto -c -k --sequesterRsrc --keepParent Anu-macOS Anu-macOS-universal.zip
       - uses: actions/upload-artifact@v4
         with:
           name: Anu-macos-universal
-          path: bin/
+          path: Anu-macOS-universal.zip
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [linux, windows, macos]
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - run: ls -la dist
+      - uses: softprops/action-gh-release@v2
+        with:
+          name: Anu ${{ github.ref_name }}
+          body: |
+            **Anu** – Emulation des Mutable Instruments Anushri (Monosynth + generative Drum Machine).
+
+            **macOS (Intel + Apple Silicon):** `Anu-macOS-universal.zip`
+            - `Anu.vst3` → `~/Library/Audio/Plug-Ins/VST3/`
+            - `Anu.clap` → `~/Library/Audio/Plug-Ins/CLAP/`
+            - `Anu.component` (Logic/AU) → `~/Library/Audio/Plug-Ins/Components/`
+            - Nicht von Apple notarisiert. Falls macOS blockiert, einmal im Terminal:
+              `xattr -dr com.apple.quarantine ~/Library/Audio/Plug-Ins/VST3/Anu.vst3`
+
+            **Windows:** `Anu-windows-x64.zip` · **Linux:** `Anu-linux-x64.zip`
+
+            Lizenz: GPL-3.0 (basiert auf der Anushri-Firmware von Emilie Gillet).
+          files: dist/*.zip
