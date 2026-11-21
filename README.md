@@ -29,3 +29,6 @@ Benötigt Xcode-Kommandozeilenwerkzeuge und CMake ≥ 3.22.
 
 ## Lizenz
 GPL v3.0 – siehe `LICENSE`. Werksdaten aus der Shruthi-1-Firmware von Émilie Gillet / Mutable Instruments.
+
+## Weitere Projekte in diesem Repo
+- [`Volta4/`](Volta4/) – **VOLTA·4**, semimodularer Patch-Drumsynth (AU/VST3, eigener Build „Build VOLTA-4 macOS“, Release `volta4-latest`)

@@ -1,0 +1,58 @@
+VOLTA-4 – Installation auf dem Mac
+==================================
+
+1. ZIP entpacken.
+
+2. Dateien kopieren (im Finder: Gehe zu > Gehe zum Ordner …):
+   - "VOLTA-4.component"  ->  ~/Library/Audio/Plug-Ins/Components/
+   - "VOLTA-4.vst3"       ->  ~/Library/Audio/Plug-Ins/VST3/
+   - "VOLTA-4.app" (Standalone, optional) -> Programme
+
+3. Sperre von macOS entfernen (das Plugin ist nicht bei Apple notarisiert).
+   Terminal öffnen und einfügen:
+
+   xattr -dr com.apple.quarantine ~/Library/Audio/Plug-Ins/Components/VOLTA-4.component
+   xattr -dr com.apple.quarantine ~/Library/Audio/Plug-Ins/VST3/VOLTA-4.vst3
+
+4. Ableton Live: Einstellungen > Plug-Ins
+   - "VST3-Plug-In-Systemordner verwenden" bzw. "Audio Units v2 verwenden" einschalten
+   - "Neu scannen" klicken
+
+5. Im Browser unter Plug-Ins > donkirschbaum > VOLTA-4 auf eine MIDI-Spur ziehen.
+
+
+HOST-Sync (Ableton)
+-------------------
+- Oben neben BPM auf HOST tippen: Tempo und Start/Stopp kommen dann von Ableton.
+  Der Sequenzer läuft taktgenau mit der Song-Position (auch bei Loops und Sprüngen).
+- HOST aus: eigene Clock, Start über den START-Knopf, Tempo über BPM/TAP.
+- HOST ist selbst ein Parameter ("Host-Sync") und lässt sich automatisieren.
+
+
+MIDI
+----
+Alle 118 Parameter (Regler, LFO-Formen, alle 64 Sequenzer-Schritte, Längen, Mute, Solo,
+Play, Host-Sync) sind in Ableton automatisierbar und per Ableton-MIDI-Map belegbar.
+
+Eigenes MIDI-Learn im Plugin:
+  MIDI-Knopf oben antippen -> Element antippen (Regler, Schritt, M/S, Länge, Play, Host)
+  -> Regler/Taste am Controller bewegen. Nochmal tippen = Zuordnung löschen.
+  CC↺ lädt die Standardbelegung. Schalter: Wert ab 64 = an.
+
+Standard-CC-Belegung:
+  CC 20-29   Tempo, Swing, Lautstärke, Echo-Zeit, Echo-FB, Echo-Rück, LFO1, LFO2, Prob, Teiler
+  CC 30-36   Kick:  Tonhöhe, Ausklang, Farbe, Punch, CV-Tiefe, Pegel, Echo
+  CC 40-46   Snare: (gleiche Reihenfolge)
+  CC 50-56   Bass:  (gleiche Reihenfolge)
+  CC 102-108 Hats:  (gleiche Reihenfolge)
+  CC 70-73   Mute A-D     CC 74-77 Solo A-D     CC 84-87 Länge A-D
+  CC 80      Play         CC 81    Host-Sync    CC 82/83 LFO-Form 1/2
+
+MIDI-Noten (zum Einspielen per Pad/Keyboard, Anschlagstärke wird beachtet):
+  C1 (36) Kick · D1 (38) Snare · F#1 (42) Hats zu · A#1 (46) Hats offen · ab C2 (48) Bass mit Tonhöhe
+
+
+Tipps
+-----
+- Presets, Zufall, Rückgängig/Wiederholen und das Patchfeld funktionieren wie in der Web-Version.
+- Kabel, Preset-Nummer und MIDI-Belegung werden mit dem Ableton-Set gespeichert.

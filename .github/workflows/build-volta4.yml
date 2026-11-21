@@ -1,0 +1,57 @@
+name: Build VOLTA-4 macOS (AU + VST3)
+
+on:
+  push:
+    paths:
+      - 'Volta4/**'
+      - '.github/workflows/build-volta4.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: Volta4
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: "Configure (universal arm64 + x86_64)"
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0
+
+      - name: Build
+        run: cmake --build build --config Release -j 4
+
+      - name: Package (ad-hoc signed)
+        run: |
+          A="build/Volta4_artefacts/Release"
+          mkdir -p dist
+          cp -R "$A/AU/VOLTA-4.component" dist/
+          cp -R "$A/VST3/VOLTA-4.vst3" dist/
+          cp -R "$A/Standalone/VOLTA-4.app" dist/
+          codesign --force --deep -s - "dist/VOLTA-4.component" "dist/VOLTA-4.vst3" "dist/VOLTA-4.app"
+          cp INSTALLIEREN.txt dist/
+          cd dist && zip -r -y ../VOLTA-4-macOS.zip .
+
+      - name: Validate Audio Unit (auval)
+        continue-on-error: true
+        run: |
+          mkdir -p ~/Library/Audio/Plug-Ins/Components
+          cp -R "dist/VOLTA-4.component" ~/Library/Audio/Plug-Ins/Components/
+          killall -9 AudioComponentRegistrar || true
+          auval -v aumu Vlt4 Dnkb
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: VOLTA-4-macOS
+          path: Volta4/VOLTA-4-macOS.zip
+
+      - name: Publish as release "volta4-latest"
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete volta4-latest --yes --cleanup-tag || true
+          gh release create volta4-latest VOLTA-4-macOS.zip --title "VOLTA-4 – neuester Build" --notes "Automatisch gebaut aus ${GITHUB_SHA::7}. Installation: siehe INSTALLIEREN.txt im ZIP." --target "$GITHUB_SHA"
