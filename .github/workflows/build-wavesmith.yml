@@ -1,0 +1,71 @@
+name: Build Wavesmith (AU + VST3)
+
+on:
+  push:
+    paths:
+      - "Wavesmith/**"
+      - ".github/workflows/build-wavesmith.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: Wavesmith
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: "Configure (universal arm64 + x86_64)"
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
+
+      - name: Build
+        run: cmake --build build --config Release --target Wavesmith_AU Wavesmith_VST3 Wavesmith_Standalone -j 4
+
+      - name: Package (ad-hoc signed ZIP + installer)
+        run: |
+          A="build/Wavesmith_artefacts/Release"
+          mkdir -p dist
+          cp -R "$A/AU/Wavesmith.component" dist/
+          cp -R "$A/VST3/Wavesmith.vst3" dist/
+          cp -R "$A/Standalone/Wavesmith.app" dist/
+          codesign --force --deep -s - dist/Wavesmith.component dist/Wavesmith.vst3 dist/Wavesmith.app
+          cp INSTALLIEREN.txt dist/
+
+          # Installer package: installs AU + VST3 for all users
+          mkdir -p pkgroot/Library/Audio/Plug-Ins/Components pkgroot/Library/Audio/Plug-Ins/VST3
+          cp -R dist/Wavesmith.component pkgroot/Library/Audio/Plug-Ins/Components/
+          cp -R dist/Wavesmith.vst3 pkgroot/Library/Audio/Plug-Ins/VST3/
+          pkgbuild --root pkgroot --identifier com.wavesmithaudio.wavesmith.pkg --version 1.0.0 \
+                   --install-location / ../Wavesmith-Installer.pkg
+
+          cd dist && zip -r -y ../../Wavesmith-macOS.zip .
+
+      - name: Validate Audio Unit (auval)
+        continue-on-error: true
+        run: |
+          mkdir -p ~/Library/Audio/Plug-Ins/Components
+          cp -R dist/Wavesmith.component ~/Library/Audio/Plug-Ins/Components/
+          killall -9 AudioComponentRegistrar || true
+          auval -v aumu Wsm1 Wvsm
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Wavesmith-macOS
+          path: |
+            Wavesmith-macOS.zip
+            Wavesmith-Installer.pkg
+
+      - name: Publish as release "wavesmith-latest"
+        working-directory: .
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete wavesmith-latest --yes --cleanup-tag || true
+          gh release create wavesmith-latest Wavesmith-Installer.pkg Wavesmith-macOS.zip \
+            --title "Wavesmith – neuester Build" \
+            --notes "Wavetable-Synth (AU + VST3, Apple Silicon + Intel) mit 1000 Presets. Automatisch gebaut aus ${GITHUB_SHA::7}. Installation: siehe Wavesmith/INSTALLIEREN.txt." \
+            --target "$GITHUB_SHA" --latest=false

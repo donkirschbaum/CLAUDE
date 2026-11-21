@@ -1,0 +1,37 @@
+WAVESMITH – INSTALLATION (macOS, Apple Silicon & Intel)
+=========================================================
+
+VARIANTE A – Installer (empfohlen)
+1. "Wavesmith-Installer.pkg" doppelklicken.
+2. macOS meldet, dass der Entwickler nicht verifiziert ist (das Plugin ist
+   nicht bei Apple notarisiert). Dann:
+   Systemeinstellungen > Datenschutz & Sicherheit > ganz nach unten scrollen
+   > bei "Wavesmith-Installer.pkg" auf "Trotzdem öffnen" klicken.
+3. Installer durchklicken. AU und VST3 landen in
+   /Library/Audio/Plug-Ins/Components bzw. /Library/Audio/Plug-Ins/VST3.
+
+VARIANTE B – ZIP manuell
+1. ZIP entpacken.
+2. Wavesmith.component nach ~/Library/Audio/Plug-Ins/Components kopieren,
+   Wavesmith.vst3 nach ~/Library/Audio/Plug-Ins/VST3.
+   (Im Finder: Gehe zu > Gehe zum Ordner … und den Pfad einfügen.)
+3. Terminal öffnen und die Quarantäne entfernen:
+   xattr -cr ~/Library/Audio/Plug-Ins/Components/Wavesmith.component
+   xattr -cr ~/Library/Audio/Plug-Ins/VST3/Wavesmith.vst3
+
+ABLETON LIVE
+1. Live neu starten.
+2. Einstellungen > Plug-Ins: "Audio Units v2" und/oder "VST3 Plug-In
+   System-Ordner" einschalten, ggf. "Neu scannen".
+3. Im Browser unter Plug-Ins > Wavesmith Audio > Wavesmith.
+
+PRESETS
+- Oben im Plugin: Kategorie wählen (Bass, Lead, Pluck, Sequence), dann Preset
+  aus der Liste oder mit < > durchblättern.
+- "Save" speichert eigene Presets nach ~/Music/Wavesmith/User Presets
+  (Kategorie "User").
+- Sequence-Presets: einfach eine Taste oder einen Akkord halten. Arpeggiator
+  und Step-Sequencer laufen zum Live-Tempo.
+
+Die Standalone-App (Wavesmith.app im ZIP) eignet sich zum schnellen Testen
+ohne DAW.
