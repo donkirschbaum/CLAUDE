@@ -272,7 +272,7 @@ SampleEditView::SampleEditView (FundstueckProcessor& p, Content& c) : proc (p), 
     playBtn.setButtonText (U8 ("\xe2\x96\xb6  Anh\xc3\xb6ren"));
     playBtn.onClick = [this] { proc.audition (index, -1); };
     resetBtn.setButtonText (U8 ("Zur\xc3\xbc" "cksetzen"));
-    resetBtn.onClick = [this] { ts = 0; te = 1; proc.setTrim (index, ts, te); proc.audition (index, -1); repaint(); };
+    resetBtn.onClick = [this] { proc.pushUndo(); ts = 0; te = 1; proc.setTrim (index, ts, te); proc.audition (index, -1); repaint(); };
     prevBtn.setButtonText (U8 ("\xe2\x97\x80"));
     nextBtn.setButtonText (U8 ("\xe2\x96\xb6"));
     prevBtn.onClick = [this] { const int n = proc.msgSet ? (int) proc.msgSet->slices.size() : 0; if (n > 0) { open ((index - 1 + n) % n); proc.audition (index, -1); } };
@@ -283,7 +283,7 @@ SampleEditView::SampleEditView (FundstueckProcessor& p, Content& c) : proc (p), 
         auto* b = laneBtns.add (new TextButton (kLaneNames[l]));
         b->setColour (TextButton::buttonOnColourId, col::lane[l]);
         b->setColour (TextButton::textColourOffId, col::lane[l]);
-        b->onClick = [this, l] { proc.setLaneSlice (l, index); proc.audition (index, l); open (index); };
+        b->onClick = [this, l] { proc.pushUndo(); proc.setLaneSlice (l, index); proc.audition (index, l); open (index); };
         addAndMakeVisible (b);
     }
 }
@@ -370,6 +370,7 @@ void SampleEditView::mouseDown (const MouseEvent& e)
 {
     if (! waveR.expanded (0, 22).contains (e.position.toInt())) return;
     const float x = e.position.x;
+    proc.pushUndo();
     dragging = std::abs (x - fracToX (ts)) <= std::abs (x - fracToX (te)) ? 1 : 2;
     mouseDrag (e);
 }
@@ -394,6 +395,7 @@ void SampleEditView::mouseUp (const MouseEvent&)
 void SampleEditView::mouseDoubleClick (const MouseEvent& e)
 {
     if (! waveR.contains (e.position.toInt())) return;
+    proc.pushUndo();
     ts = 0; te = 1;
     proc.setTrim (index, ts, te);
     repaint();
@@ -520,8 +522,8 @@ void LaneRow::paint (Graphics& g)
         g.setColour (inside ? col::dark : col::dim);
         if (lane == fs::kMel && on)
         {
-            g.setFont (fnt (11, true));
-            g.drawText (kNoteNames[v % 12], sr.toNearestInt(), Justification::centred);
+            g.setFont (fnt (sr.getWidth() < 34 ? 10.5f : 11.5f, true));
+            g.drawText (FundstueckProcessor::noteName (v), sr.toNearestInt(), Justification::centred);
         }
         else if (lane == 2 && v > 1)
         {
@@ -534,6 +536,7 @@ void LaneRow::paint (Graphics& g)
 void LaneRow::mouseDown (const MouseEvent& e)
 {
     const auto p = e.position;
+    dragStep = -1;
     if (nameR.contains (p.toInt()))
     {
         content.armed = content.armed == lane ? -1 : lane;
@@ -541,15 +544,84 @@ void LaneRow::mouseDown (const MouseEvent& e)
         return;
     }
     if (thumbR.contains (p.toInt())) { proc.audition (proc.laneSlice[lane].load(), lane); return; }
-    if (upR.contains (p.toInt())) { proc.cycleSlice (lane, -1); return; }
-    if (downR.contains (p.toInt())) { proc.cycleSlice (lane, 1); return; }
+    if (upR.contains (p.toInt())) { proc.pushUndo(); proc.cycleSlice (lane, -1); return; }
+    if (downR.contains (p.toInt())) { proc.pushUndo(); proc.cycleSlice (lane, 1); return; }
     const int s = stepAt (p);
     if (s < 0) return;
-    int mod = 0;
-    if (e.mods.isShiftDown()) mod = 1;
-    else if (e.mods.isPopupMenu() || e.mods.isAltDown()) mod = -1;
-    proc.stepClick (lane, s, mod);
+    if (lane == fs::kMel)
+    {
+        if (e.mods.isPopupMenu()) { showNoteMenu (s); return; }
+        const int v = proc.steps[lane][s].load();
+        if (v >= 0) { dragStep = s; dragBaseNote = v; dragStartY = p.y; dragMoved = false; return; }  // Ziehen oder Loeschen beim Loslassen
+    }
+    proc.pushUndo();
+    proc.stepClick (lane, s, 0);
     repaint();
+}
+
+void LaneRow::mouseDrag (const MouseEvent& e)
+{
+    if (dragStep < 0) return;
+    const int d = roundToInt ((dragStartY - e.position.y) / 8.0f);
+    if (d == 0 && ! dragMoved) return;
+    const auto N = proc.scaleNotes();
+    if (N.empty()) return;
+    int base = 0, best = 1000;
+    for (int i = 0; i < (int) N.size(); ++i) { const int dist = std::abs (N[(size_t) i] - dragBaseNote); if (dist < best) { best = dist; base = i; } }
+    const int note = N[(size_t) jlimit (0, (int) N.size() - 1, base + d)];
+    if (note != proc.steps[lane][dragStep].load())
+    {
+        if (! dragMoved) proc.pushUndo();
+        dragMoved = true;
+        proc.setMelNote (dragStep, note, true);
+        repaint();
+    }
+}
+
+void LaneRow::mouseUp (const MouseEvent&)
+{
+    if (dragStep >= 0 && ! dragMoved)
+    {
+        proc.pushUndo();
+        proc.setMelNote (dragStep, -1, false);
+        repaint();
+    }
+    dragStep = -1;
+}
+
+void LaneRow::mouseMove (const MouseEvent& e)
+{
+    const int s = stepAt (e.position);
+    const bool noteHere = lane == fs::kMel && s >= 0 && proc.steps[lane][s].load() >= 0;
+    setMouseCursor (noteHere ? MouseCursor::UpDownResizeCursor : MouseCursor::NormalCursor);
+}
+
+void LaneRow::showNoteMenu (int s)
+{
+    const auto N = proc.scaleNotes();
+    const int cur = proc.steps[fs::kMel][s].load();
+    PopupMenu m;
+    m.setLookAndFeel (&getLookAndFeel());
+    m.addSectionHeader (U8 ("Note \xc2\xb7 ") + String (kNoteNames[proc.root]) + " " + fs::kScales[proc.scale].name);
+    for (int i = (int) N.size() - 1; i >= 0; --i)
+    {
+        String name = FundstueckProcessor::noteName (N[(size_t) i]);
+        if ((N[(size_t) i] - proc.root) % 12 == 0) name << U8 ("  \xc2\xb7 Grundton");
+        m.addItem (i + 1, name, true, N[(size_t) i] == cur);
+    }
+    m.addSeparator();
+    m.addItem (1000, U8 ("L\xc3\xb6schen"), cur >= 0);
+    const auto area = localAreaToGlobal (stepRect (s).toNearestInt());
+    SafePointer<LaneRow> safe (this);
+    m.showMenuAsync (PopupMenu::Options().withTargetScreenArea (area).withMaximumNumColumns (1),
+                     [safe, s, N] (int r)
+                     {
+                         if (safe == nullptr || r == 0) return;
+                         safe->proc.pushUndo();
+                         if (r == 1000) safe->proc.setMelNote (s, -1, false);
+                         else safe->proc.setMelNote (s, N[(size_t) r - 1], true);
+                         safe->repaint();
+                     });
 }
 
 void LaneRow::mouseDoubleClick (const MouseEvent& e)
@@ -562,6 +634,9 @@ void LaneRow::mouseWheelMove (const MouseEvent& e, const MouseWheelDetails& w)
 {
     const int s = stepAt (e.position);
     if (lane != fs::kMel || s < 0 || proc.steps[lane][s].load() < 0) { Component::mouseWheelMove (e, w); return; }
+    const auto now = Time::getMillisecondCounter();
+    if (now - lastWheelUndo > 700) proc.pushUndo();
+    lastWheelUndo = now;
     proc.shiftNote (lane, s, w.deltaY > 0 ? 1 : -1);
     repaint();
 }
@@ -609,9 +684,9 @@ Content::Content (FundstueckProcessor& p) : proc (p), overview (p, *this), chips
 
     auto btn = [this] (TextButton& b, const String& t, std::function<void()> fn)
     { b.setButtonText (t); b.onClick = std::move (fn); addAndMakeVisible (b); };
-    btn (demoBtn, U8 ("Demo-Ger\xc3\xa4usche"), [this] { proc.loadDemo(); });
+    btn (demoBtn, U8 ("Demo-Ger\xc3\xa4usche"), [this] { proc.pushUndo(); proc.loadDemo(); });
     btn (loadBtn, U8 ("Datei laden\xe2\x80\xa6"), [this] { openFileChooser(); });
-    btn (recBtn, U8 ("\xe2\x97\x8f  Aufnehmen"), [this] { if (proc.recording.load()) proc.stopRecording(); else proc.startRecording(); });
+    btn (recBtn, U8 ("\xe2\x97\x8f  Aufnehmen"), [this] { if (proc.recording.load()) { proc.pushUndo(); proc.stopRecording(); } else proc.startRecording(); });
     recBtn.setColour (TextButton::textColourOffId, col::lane[0]);
     recBtn.setTooltip (U8 ("Nimmt den Eingang auf. Ableton: im Ger\xc3\xa4t \xe2\x80\x9eSidechain\xe2\x80\x9c aufklappen und die Mikrofon-Spur w\xc3\xa4hlen."));
     syncBtn.setButtonText ("HOST-SYNC");
@@ -620,11 +695,15 @@ Content::Content (FundstueckProcessor& p) : proc (p), overview (p, *this), chips
     syncBtn.onClick = [this] { if (syncBtn.getToggleState()) proc.internalPlay = false; };
     addAndMakeVisible (syncBtn);
     aSync = std::make_unique<AudioProcessorValueTreeState::ButtonAttachment> (proc.apvts, "sync", syncBtn);
-    btn (rollAll, U8 ("Alles w\xc3\xbcrfeln"), [this] { proc.autoAssign (true); proc.rollDrums(); proc.rollMel(); });
-    btn (rollDrums, "Drums", [this] { proc.rollDrums(); });
-    btn (rollMel, "Melodie", [this] { proc.rollMel(); });
-    btn (rollSounds, "Sounds", [this] { proc.autoAssign (true); });
-    btn (clearBtn, "Leeren", [this] { proc.clearPattern(); });
+    btn (rollAll, U8 ("Alles w\xc3\xbcrfeln"), [this] { proc.pushUndo(); proc.autoAssign (true); proc.rollDrums(); proc.rollMel(); });
+    btn (rollDrums, "Drums", [this] { proc.pushUndo(); proc.rollDrums(); });
+    btn (rollMel, "Melodie", [this] { proc.pushUndo(); proc.rollMel(); });
+    btn (rollSounds, "Sounds", [this] { proc.pushUndo(); proc.autoAssign (true); });
+    btn (clearBtn, "Leeren", [this] { proc.pushUndo(); proc.clearPattern(); });
+    btn (undoBtn, U8 ("\xe2\x86\xb6  R\xc3\xbc" "ckg\xc3\xa4ngig"), [this] { proc.undo(); syncControls(); });
+    btn (redoBtn, U8 ("\xe2\x86\xb7  Wiederholen"), [this] { proc.redo(); syncControls(); });
+    undoBtn.setTooltip (U8 ("Letzte \xc3\x84nderung an Pattern, Schnipseln, Tonart oder Aufnahme zur\xc3\xbc" "cknehmen"));
+    redoBtn.setTooltip (U8 ("Zur\xc3\xbc" "ckgenommene \xc3\x84nderung wiederherstellen"));
     rollAll.setColour (TextButton::buttonColourId, col::ink);
     rollAll.setColour (TextButton::textColourOffId, col::dark);
     demoBtn.setColour (TextButton::buttonColourId, col::ink);
@@ -649,13 +728,14 @@ Content::Content (FundstueckProcessor& p) : proc (p), overview (p, *this), chips
         auto* b = styleBtns.add (new TextButton (fs::kStyles[i].name));
         b->setRadioGroupId (101);
         b->setClickingTogglesState (true);
-        b->onClick = [this, i] { proc.setStyle (i); syncControls(); };
+        b->onClick = [this, i] { proc.pushUndo(); proc.setStyle (i); syncControls(); };
         addAndMakeVisible (b);
     }
     for (int i = 0; i < 12; ++i) rootBox.addItem (kNoteNames[i], i + 1);
     for (int i = 0; i < 5; ++i) scaleBox.addItem (fs::kScales[i].name, i + 1);
-    rootBox.onChange = [this] { proc.root = rootBox.getSelectedId() - 1; proc.rollMel(); };
-    scaleBox.onChange = [this] { proc.scale = scaleBox.getSelectedId() - 1; proc.rollMel(); };
+    // Tonart-Wechsel transponiert die vorhandene Melodie (statt neu zu wuerfeln)
+    rootBox.onChange = [this] { proc.pushUndo(); const int o = proc.root; proc.root = rootBox.getSelectedId() - 1; proc.remapMelody (o, proc.scale); };
+    scaleBox.onChange = [this] { proc.pushUndo(); const int o = proc.scale; proc.scale = scaleBox.getSelectedId() - 1; proc.remapMelody (proc.root, o); };
     addAndMakeVisible (rootBox); addAndMakeVisible (scaleBox);
 
     addAndMakeVisible (overview);
@@ -706,13 +786,15 @@ void Content::resized()
     dens.setBounds (860, 320, 140, 24);
     rootBox.setBounds (216, 356, 62, 28);
     scaleBox.setBounds (284, 356, 124, 28);
-    int x = 424;
+    int x = 420;
     for (auto* b : { &rollAll, &rollDrums, &rollMel, &rollSounds, &clearBtn })
     {
-        const int w = b == &rollAll ? 120 : 74;
-        b->setBounds (x, 356, w, 28); x += w + 6;
+        const int w = b == &rollAll ? 112 : 66;
+        b->setBounds (x, 356, w, 28); x += w + 5;
     }
-    exportBtn.setBounds (850, 356, 220, 28);
+    exportBtn.setBounds (x + 8, 356, 1070 - x - 8, 28);
+    undoBtn.setBounds (150, 409, 116, 22);
+    redoBtn.setBounds (272, 409, 116, 22);
 
     // 3 Sequencer
     for (int l = 0; l < lanes.size(); ++l) lanes[l]->setBounds (26, 436 + l * 51, 1048, 47);
@@ -788,13 +870,13 @@ void Content::paint (Graphics& g)
     g.drawText ("DICHTE", 790, 320, 64, 24, Justification::centredRight);
     g.drawText ("TONART", 150, 356, 60, 28, Justification::centredLeft);
     g.setFont (fnt (12));
-    g.drawText (U8 ("Schnipsel anklicken = bearbeiten \xc2\xb7 Spurname anklicken, dann Schnipsel = zuweisen \xc2\xb7 Hats: mehrfach klicken = Wirbel \xc2\xb7 P = Polymeter"),
-                220, 412, 854, 20, Justification::centredRight, true);
+    g.drawText (U8 ("Spurname + Schnipsel = zuweisen \xc2\xb7 Hats: mehrfach klicken = Wirbel \xc2\xb7 Melodie: Note ziehen \xe2\x86\x95 / Rechtsklick = Notenmen\xc3\xbc \xc2\xb7 P = Polymeter"),
+                400, 410, 674, 20, Justification::centredRight, true);
 }
 
 void Content::chooseSlice (int i)
 {
-    if (armed >= 0) { proc.setLaneSlice (armed, i); proc.audition (i, armed); }
+    if (armed >= 0) { proc.pushUndo(); proc.setLaneSlice (armed, i); proc.audition (i, armed); }
     else proc.audition (i, -1);
     openEditor (i);
 }
@@ -812,7 +894,7 @@ void Content::openFileChooser()
                           {
                               StringArray paths;
                               for (auto& f : fc.getResults()) paths.add (f.getFullPathName());
-                              if (! paths.isEmpty()) proc.loadFiles (paths);
+                              if (! paths.isEmpty()) { proc.pushUndo(); proc.loadFiles (paths); }
                           });
 }
 
@@ -821,6 +903,7 @@ void Content::timerCallback()
     if (sensDirty && Time::getMillisecondCounter() - sensChangedAt > 250)
     {
         sensDirty = false;
+        proc.pushUndo();
         proc.sens = (float) sens.getValue() / 100.f;
         proc.reanalyze (FundstueckProcessor::Mode::Resens);
     }
@@ -841,7 +924,9 @@ void Content::timerCallback()
     }
 
     // Aufnahme
-    if (proc.recFull.load()) proc.stopRecording();
+    if (proc.recFull.load()) { proc.pushUndo(); proc.stopRecording(); }
+    undoBtn.setEnabled (proc.canUndo());
+    redoBtn.setEnabled (proc.canRedo());
     const bool rec = proc.recording.load();
     const int tenths = rec ? (int) (proc.recPos.load() / jmax (1.0, proc.getRecSampleRate()) * 10.0) : -1;
     if (rec != seenRec || tenths != seenRecTenths)
@@ -893,5 +978,6 @@ void FundstueckEditor::resized()
 
 void FundstueckEditor::filesDropped (const StringArray& files, int, int)
 {
+    proc.pushUndo();
     proc.loadFiles (files);
 }

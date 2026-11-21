@@ -463,6 +463,7 @@ void FundstueckProcessor::loadDemo()
 {
     sourceSR = 44100.0;
     source = makeDemo (sourceSR);
+    ++sourceVersion;
     sourceLabel = juce::String (juce::CharPointer_UTF8 ("Demo-Ger\xc3\xa4usche"));
     reanalyze (Mode::Fresh);
 }
@@ -511,6 +512,7 @@ bool FundstueckProcessor::loadFiles (const juce::StringArray& paths)
     float pk = 1.0e-9f; for (auto v : out) pk = juce::jmax (pk, std::abs (v));
     for (auto& v : out) v /= pk;
     source.swap (out);
+    ++sourceVersion;
     sourceSR = outSR;
     sourceLabel = loaded == 1 ? juce::File (paths[0]).getFileName() : juce::String (loaded) + " Dateien";
     reanalyze (Mode::Fresh);
@@ -551,6 +553,7 @@ void FundstueckProcessor::stopRecording()
     std::vector<float> out (recBuf.begin() + a, recBuf.begin() + b);
     for (auto& v : out) v /= pk;
     source.swap (out);
+    ++sourceVersion;
     sourceSR = sr;
     sourceLabel = "Aufnahme";
     reanalyze (Mode::Fresh);
@@ -561,12 +564,7 @@ void FundstueckProcessor::reanalyze (Mode mode)
     auto set = std::make_shared<SliceSet>();
     set->sampleRate = sourceSR;
     if (! source.empty()) set->slices = analyze (source, sourceSR, sens);
-    msgSet = set;
-    {
-        const juce::SpinLock::ScopedLockType sl (setLock);
-        nextSet = set;
-        setPending = true;
-    }
+    publishSet (set);
     const auto secs = juce::String ((double) source.size() / sourceSR, 1);
     if (set->slices.empty())
         statusText = sourceLabel + juce::String (juce::CharPointer_UTF8 (": keine klaren Treffer \xe2\x80\x93 Empfindlichkeit erh\xc3\xb6hen."));
@@ -751,6 +749,127 @@ void FundstueckProcessor::shiftNote (int lane, int step, int dir)
     bump();
 }
 
+void FundstueckProcessor::publishSet (std::shared_ptr<SliceSet> set)
+{
+    msgSet = set;
+    const juce::SpinLock::ScopedLockType sl (setLock);
+    nextSet = set;
+    setPending = true;
+}
+
+FundstueckProcessor::Snapshot FundstueckProcessor::capture()
+{
+    Snapshot sn;
+    for (int l = 0; l < kLanes; ++l)
+    {
+        for (int st = 0; st < kSteps; ++st) sn.steps[l][st] = steps[l][st].load();
+        sn.slice[l] = laneSlice[l].load();
+    }
+    for (int i = 0; i < kMaxSlices; ++i) { sn.ts[i] = trimS[i].load(); sn.te[i] = trimE[i].load(); }
+    sn.style = style; sn.root = root; sn.scale = scale; sn.melOct = melOct.load();
+    sn.density = density; sn.sens = sens;
+    if (sourceShared == nullptr || sharedVersion != sourceVersion)
+    {
+        sourceShared = std::make_shared<const std::vector<float>> (source);
+        sharedVersion = sourceVersion;
+    }
+    sn.src = sourceShared; sn.srcSR = sourceSR;
+    sn.label = sourceLabel; sn.status = statusText;
+    sn.set = msgSet;
+    return sn;
+}
+
+void FundstueckProcessor::restore (const Snapshot& sn)
+{
+    if (sn.src != sourceShared)
+    {
+        source = *sn.src;
+        sourceShared = sn.src;
+        sharedVersion = ++sourceVersion;
+    }
+    sourceSR = sn.srcSR; sourceLabel = sn.label; statusText = sn.status;
+    if (sn.set != msgSet) publishSet (sn.set);
+    for (int l = 0; l < kLanes; ++l)
+    {
+        for (int st = 0; st < kSteps; ++st) steps[l][st] = sn.steps[l][st];
+        laneSlice[l] = sn.slice[l];
+    }
+    for (int i = 0; i < kMaxSlices; ++i) { trimS[i] = sn.ts[i]; trimE[i] = sn.te[i]; }
+    style = sn.style; root = sn.root; scale = sn.scale; melOct = sn.melOct;
+    density = sn.density; sens = sn.sens;
+    bump();
+}
+
+void FundstueckProcessor::pushUndo()
+{
+    undoStack.push_back (capture());
+    if (undoStack.size() > 60) undoStack.erase (undoStack.begin());
+    redoStack.clear();
+    bump();
+}
+
+bool FundstueckProcessor::undo()
+{
+    if (undoStack.empty()) return false;
+    redoStack.push_back (capture());
+    const auto sn = undoStack.back();
+    undoStack.pop_back();
+    restore (sn);
+    return true;
+}
+
+bool FundstueckProcessor::redo()
+{
+    if (redoStack.empty()) return false;
+    undoStack.push_back (capture());
+    const auto sn = redoStack.back();
+    redoStack.pop_back();
+    restore (sn);
+    return true;
+}
+
+juce::String FundstueckProcessor::noteName (int m)
+{
+    static const char* nn[12] = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "H" };
+    return juce::String (nn[((m % 12) + 12) % 12]) + juce::String (m / 12 - 1);
+}
+
+void FundstueckProcessor::setMelNote (int step, int note, bool listen)
+{
+    if (step < 0 || step >= kSteps) return;
+    steps[kMel][step] = note;
+    if (listen && note >= 0)
+    {
+        Event e; e.lane = kMel; e.val = note; e.vel = .9f; e.seq = true;
+        const auto scope = uiFifo.write (1);
+        if (scope.blockSize1 > 0) uiEvents[scope.startIndex1] = e;
+        else if (scope.blockSize2 > 0) uiEvents[scope.startIndex2] = e;
+    }
+    bump();
+}
+
+void FundstueckProcessor::remapMelody (int oldRoot, int oldScale)
+{
+    // Melodie behaelt ihre Kontur: jede Note wird ueber ihre Stufe in die neue Tonart gelegt
+    const auto& os = kScales[juce::jlimit (0, 4, oldScale)];
+    const auto& ns = kScales[scale];
+    const int shift = ((root - oldRoot) % 12 + 12 + 6) % 12 - 6;   // naechstgelegene neue Grundton-Lage
+    const int newBase = 60 + oldRoot + shift;
+    for (int st = 0; st < kSteps; ++st)
+    {
+        const int v = steps[kMel][st].load();
+        if (v < 0) continue;
+        const int rel = v - (60 + oldRoot);
+        const int oct = rel >= 0 ? rel / 12 : -((-rel + 11) / 12);
+        const int pc = rel - oct * 12;
+        int d = 0, best = 99;
+        for (int i = 0; i < os.n; ++i) { const int dist = std::abs (os.deg[i] - pc); if (dist < best) { best = dist; d = i; } }
+        const int nd = os.n == ns.n ? d : (int) std::lround (d * (ns.n - 1) / (double) juce::jmax (1, os.n - 1));
+        steps[kMel][st] = juce::jlimit (24, 108, newBase + oct * 12 + ns.deg[nd]);
+    }
+    bump();
+}
+
 void FundstueckProcessor::setTrim (int i, float a, float b)
 {
     if (i < 0 || i >= kMaxSlices) return;
@@ -891,6 +1010,7 @@ void FundstueckProcessor::setStateInformation (const void* data, int size)
         const auto* p = static_cast<const juce::int16*> (mb->getData());
         source.assign (n, 0.f);
         for (size_t i = 0; i < n; ++i) source[i] = p[i] / 32767.f;
+        ++sourceVersion;
         sourceSR = (double) st.getProperty ("audioSR", 44100.0);
     }
     reanalyze (Mode::Restore);

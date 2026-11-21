@@ -97,6 +97,18 @@ public:
     float getTrimEnd (int i) const   { return i >= 0 && i < fs::kMaxSlices ? trimE[i].load() : 1.f; }
     double bpmOverride = 0.0;  // nur fuer den Offline-Export
 
+    // Rueckgaengig / Wiederholen (Pattern, Schnipsel, Grenzen, Tonart, Quelle)
+    void pushUndo();
+    bool undo();
+    bool redo();
+    bool canUndo() const { return ! undoStack.empty(); }
+    bool canRedo() const { return ! redoStack.empty(); }
+
+    // Melodie in der Tonart
+    void setMelNote (int step, int note, bool listen);
+    void remapMelody (int oldRoot, int oldScale);
+    static juce::String noteName (int midi);
+
     std::shared_ptr<fs::SliceSet> msgSet;
     std::vector<float> source;
     double sourceSR = 44100.0;
@@ -154,6 +166,22 @@ private:
     std::atomic<float>* pRev = nullptr; std::atomic<float>* pTape = nullptr; std::atomic<float>* pSub = nullptr;
     std::atomic<float>* pMaster = nullptr; std::atomic<float>* pSync = nullptr;
     std::vector<float> recBuf;
+
+    struct Snapshot
+    {
+        int steps[fs::kLanes][fs::kSteps]; int slice[fs::kLanes];
+        float ts[fs::kMaxSlices], te[fs::kMaxSlices];
+        int style, root, scale, melOct; float density, sens;
+        std::shared_ptr<const std::vector<float>> src; double srcSR;
+        juce::String label, status;
+        std::shared_ptr<fs::SliceSet> set;
+    };
+    Snapshot capture();
+    void restore (const Snapshot&);
+    std::vector<Snapshot> undoStack, redoStack;
+    std::shared_ptr<const std::vector<float>> sourceShared;
+    int sourceVersion = 0, sharedVersion = -1;
+    void publishSet (std::shared_ptr<fs::SliceSet> set);
     std::atomic<float>* pVol[fs::kLanes] {}; std::atomic<float>* pTune[fs::kLanes] {};
     std::atomic<float>* pLen[fs::kLanes] {}; std::atomic<float>* pMute[fs::kLanes] {};
     std::atomic<float>* pAtk[fs::kLanes] {}; std::atomic<float>* pSolo[fs::kLanes] {};

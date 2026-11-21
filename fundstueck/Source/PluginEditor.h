@@ -111,9 +111,15 @@ public:
     void mouseDoubleClick (const juce::MouseEvent&) override;
     void mouseWheelMove (const juce::MouseEvent&, const juce::MouseWheelDetails&) override;
 private:
+    void mouseDrag (const juce::MouseEvent&) override;
+    void mouseUp (const juce::MouseEvent&) override;
+    void mouseMove (const juce::MouseEvent&) override;
     juce::Rectangle<float> stepRect (int s) const;
     int stepAt (juce::Point<float>) const;
+    void showNoteMenu (int step);
     FundstueckProcessor& proc; Content& content; const int lane;
+    int dragStep = -1, dragBaseNote = 0; float dragStartY = 0; bool dragMoved = false;
+    juce::uint32 lastWheelUndo = 0;
     juce::Slider vol, tune, atk, dec, len;
     juce::TextButton solo { "S" }, mute { "M" }, poly { "P" };
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> aVol, aTune, aAtk, aDec, aLen;
@@ -142,7 +148,7 @@ private:
     PlayButton play;
     juce::Slider bpm, swing, feel, rev, tape, sub, master, sens, dens;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> aBpm, aSwing, aFeel, aRev, aTape, aSub, aMaster;
-    juce::TextButton demoBtn, loadBtn, recBtn, syncBtn, rollAll, rollDrums, rollMel, rollSounds, clearBtn;
+    juce::TextButton demoBtn, loadBtn, recBtn, syncBtn, rollAll, rollDrums, rollMel, rollSounds, clearBtn, undoBtn, redoBtn;
     ExportButton exportBtn;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> aSync;
     juce::OwnedArray<juce::TextButton> styleBtns;

@@ -49,5 +49,17 @@ int main(){
   // Solo: nur Kick
   ex.apvts.getParameter("kick_solo")->setValueNotifyingHost(1.f); auto f2=ex.exportLoop(info); printf("solo export: %s\n", info.toRawUTF8());
   f.deleteFile(); f2.deleteFile();
+  // Undo / Redo / Tonart
+  FundstueckProcessor u; u.prepareToPlay(48000,512);
+  auto mel=[&]{ juce::String t; for(int s2=0;s2<16;s2++){int v=u.steps[4][s2].load(); t<< (v<0? juce::String("."):FundstueckProcessor::noteName(v)) << " ";} return t; };
+  printf("root=%d scale=%s\n mel A-moll: %s\n", u.root, fs::kScales[u.scale].name, mel().toRawUTF8());
+  u.pushUndo(); int o=u.root; u.root=0; u.remapMelody(o,u.scale); printf(" nach C:     %s\n", mel().toRawUTF8());
+  u.pushUndo(); int os=u.scale; u.scale=3; u.remapMelody(u.root,os); printf(" C-Dur:      %s\n", mel().toRawUTF8());
+  u.pushUndo(); u.clearPattern(); printf(" geleert:    %s\n", mel().toRawUTF8());
+  u.undo(); printf(" undo:       %s\n", mel().toRawUTF8());
+  u.undo(); u.undo(); printf(" undo x3:    %s root=%d scale=%d\n", mel().toRawUTF8(), u.root, u.scale);
+  u.redo(); printf(" redo:       %s root=%d\n", mel().toRawUTF8(), u.root);
+  int before=(int)u.msgSet->slices.size(); u.pushUndo(); u.sens=0.95f; u.reanalyze(FundstueckProcessor::Mode::Resens);
+  int after=(int)u.msgSet->slices.size(); u.undo(); printf(" sens: %d -> %d -> undo %d (sens=%.2f)\n", before, after, (int)u.msgSet->slices.size(), u.sens);
   return 0;
 }
