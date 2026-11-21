@@ -1,0 +1,47 @@
+POLYRHYTHM32 – Installation (macOS, Apple Silicon und Intel)
+============================================================
+
+1. Terminal öffnen (Programme > Dienstprogramme > Terminal) und eingeben:
+
+     bash ~/Downloads/PolyRhythm32/Installieren.command
+
+   (Pfad anpassen, falls der Ordner woanders liegt. Ordner einfach ins
+   Terminal-Fenster ziehen, dann "/Installieren.command" anhängen.)
+
+2. DAW neu starten. In Ableton Live unter Einstellungen > Plug-Ins:
+   - "VST3 (System-Ordner)" bzw. "Audio Units" einschalten
+   - "Neu scannen"
+
+3. PolyRhythm32 liegt unter Plug-Ins > donkirschbaum > PolyRhythm32 (Instrument).
+
+
+BEDIENUNG
+- 6 Spuren, Noten ab C1 abwärts: C1, B0, A#0, A0, G#0, G0 (C3 = MIDI 60,
+  also 36–31 – passt auf die unteren Pads eines Drum Racks). Note pro Spur
+  mit den Pfeilen oder per Ziehen änderbar.
+- LÄNGE pro Spur 1/32 bis 32/32 Steps. Unterschiedliche Längen laufen
+  gegeneinander -> Polyrhythmus. Die farbige Linie im Raster zeigt das
+  Loop-Ende der Spur, Steps dahinter sind gespeichert, aber stumm.
+- RATE pro Spur: 1/32 (Standard), 1/16, 1/8, 1/4, 1/16T, 1/8T.
+- Steps anklicken oder mit gedrückter Maus über mehrere Steps ziehen.
+- RANDOM ALL würfelt alle Spuren neu, RND nur die jeweilige Spur.
+  "Dichte" bestimmt, wie viele Steps gesetzt werden. Mit "inkl. Länge"
+  wird auch die Spurlänge zufällig gewählt.
+- M = Mute, CLR = Spur löschen, Vel/Gate = Anschlagstärke und Notenlänge.
+- Läuft synchron zum Transport der DAW. In der Standalone-App gibt es
+  PLAY und eine eigene BPM-Einstellung.
+
+MIDI-LOOP EXPORTIEREN
+- "MIDI exportieren..." speichert eine .mid-Datei.
+- Oder das Feld "MIDI in DAW ziehen" anfassen und direkt in einen
+  Clip-Slot oder ins Arrangement ziehen.
+- Länge "Auto (Loop)": kürzeste ganze Taktzahl, nach der sich alle Spuren
+  exakt wiederholen (nahtloser Loop). Ist sie länger als 64 Takte, werden
+  16 Takte exportiert. Alternativ fest 1–32 Takte wählen.
+  Gemutete Spuren werden nicht exportiert.
+
+LIVE-MIDI AUS DEM PLUGIN (Ableton)
+- PolyRhythm32 auf eine MIDI-Spur legen.
+- Zweite MIDI-Spur mit Drum Rack/Instrument anlegen: "MIDI From" = Spur
+  mit PolyRhythm32, darunter "PolyRhythm32" wählen, Monitor "In".
+- MIDI-Kanal oben rechts einstellbar (Standard 1).
