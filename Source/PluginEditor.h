@@ -69,18 +69,23 @@ public:
 private:
     void timerCallback() override;
     void exportMidi();
+    void updateRangeFromParams();
+    void refreshAll();
 
     PolyRhythmProcessor& proc;
     juce::LookAndFeel_V4 laf;
 
     juce::Label title, portLabel, densityLabel, bpmLabel, syncLabel, channelLabel, infoLabel;
     juce::TextButton randomAll { "RANDOM ALL" }, playButton { "PLAY" }, exportButton { "MIDI exportieren..." };
-    juce::ToggleButton randLen { "inkl. Laenge" }, virtOut { "Virt. MIDI-Out" };
+    juce::ToggleButton randNotes { "inkl. Noten" }, virtOut { "Virt. MIDI-Out" };
+    juce::TextButton undoButton, redoButton;
+    juce::Slider noteRange;
+    juce::Label rangeLabel;
     juce::Slider density, bpm, channel;
     juce::ComboBox exportLen;
 
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> densityA, bpmA, channelA;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> randLenA, playA, virtOutA;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> randNotesA, playA, virtOutA;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> exportLenA;
 
     std::array<TrackControls, PolyRhythmProcessor::numTracks> tracks;

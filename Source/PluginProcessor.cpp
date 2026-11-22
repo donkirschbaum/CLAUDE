@@ -3,6 +3,7 @@
 #include <numeric>
 #include <mutex>
 #include <set>
+#include <algorithm>
 
 namespace
 {
@@ -56,6 +57,9 @@ namespace
         usedInstances.erase (n);
     }
 
+    // C1, C#1, F#1, G#1, B1, C2
+    const int defaultNotes[PolyRhythmProcessor::numTracks] = { 36, 37, 42, 44, 47, 48 };
+
     const int defaultLengths[PolyRhythmProcessor::numTracks] = { 32, 24, 20, 16, 12, 10 };
 }
 
@@ -97,7 +101,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout PolyRhythmProcessor::createL
             juce::ParameterID { id ("rate", t), 1 }, prefix + "Rate", getRateNames(), 0));
 
         layout.add (std::make_unique<juce::AudioParameterInt> (
-            juce::ParameterID { id ("note", t), 1 }, prefix + "Note", 0, 127, 36 - t,
+            juce::ParameterID { id ("note", t), 1 }, prefix + "Note", 0, 127, defaultNotes[t],
             juce::AudioParameterIntAttributes()
                 .withStringFromValueFunction ([] (int v, int) { return noteName (v); })
                 .withValueFromStringFunction ([] (const juce::String& s) { return parseNoteName (s); })));
@@ -122,7 +126,17 @@ juce::AudioProcessorValueTreeState::ParameterLayout PolyRhythmProcessor::createL
             .withStringFromValueFunction ([] (float v, int) { return juce::String (juce::roundToInt (v * 100.0f)) + "%"; })));
 
     layout.add (std::make_unique<juce::AudioParameterBool> (
-        juce::ParameterID { "randLen", 1 }, "Zufall inkl. Laenge", false));
+        juce::ParameterID { "randNotes", 1 }, "Zufall inkl. Noten", false));
+
+    auto noteAttr = juce::AudioParameterIntAttributes()
+                        .withStringFromValueFunction ([] (int v, int) { return noteName (v); })
+                        .withValueFromStringFunction ([] (const juce::String& s) { return parseNoteName (s); });
+
+    // C0 .. C8 (C3 = 60)
+    layout.add (std::make_unique<juce::AudioParameterInt> (
+        juce::ParameterID { "noteLo", 1 }, "Zufall Noten von", 24, 120, 36, noteAttr));
+    layout.add (std::make_unique<juce::AudioParameterInt> (
+        juce::ParameterID { "noteHi", 1 }, "Zufall Noten bis", 24, 120, 48, noteAttr));
 
     layout.add (std::make_unique<juce::AudioParameterFloat> (
         juce::ParameterID { "bpm", 1 }, "Interne BPM",
@@ -286,20 +300,52 @@ void PolyRhythmProcessor::setParamValue (const juce::String& paramId, float plai
     }
 }
 
-void PolyRhythmProcessor::randomizeTrack (int track)
+int PolyRhythmProcessor::pickRandomRate()
 {
-    const juce::ScopedLock sl (randomLock);
-
-    const float density = apvts.getRawParameterValue ("density")->load();
-    const bool randLen  = apvts.getRawParameterValue ("randLen")->load() > 0.5f;
-
-    int len = getTrackLength (track);
-    if (randLen)
+    // weighted: 1/32, 1/16, 1/8, 1/4, 1/16T, 1/8T
+    static const int weights[] = { 3, 3, 2, 1, 1, 1 };
+    int total = 0;
+    for (auto w : weights) total += w;
+    int r = random.nextInt (total);
+    for (int i = 0; i < 6; ++i)
     {
-        len = random.nextInt (juce::Range<int> (2, maxSteps + 1));
-        setParamValue (id ("len", track), (float) len);
+        if (r < weights[i]) return i;
+        r -= weights[i];
+    }
+    return 0;
+}
+
+void PolyRhythmProcessor::randomizeTrackInternal (int track, std::vector<int>& usedNotes)
+{
+    const float density  = apvts.getRawParameterValue ("density")->load();
+    const bool randNotes = apvts.getRawParameterValue ("randNotes")->load() > 0.5f;
+
+    // length, rate, velocity, gate
+    const int len = random.nextInt (juce::Range<int> (2, maxSteps + 1));
+    setParamValue (id ("len", track), (float) len);
+    setParamValue (id ("rate", track), (float) pickRandomRate());
+    setParamValue (id ("vel", track), (float) random.nextInt (juce::Range<int> (60, 128)));
+    setParamValue (id ("gate", track), 0.1f + 0.9f * random.nextFloat());
+
+    // notes only if switched on: inside the selected range, different per track if possible
+    if (randNotes)
+    {
+        int lo = (int) apvts.getRawParameterValue ("noteLo")->load();
+        int hi = (int) apvts.getRawParameterValue ("noteHi")->load();
+        if (lo > hi) std::swap (lo, hi);
+
+        std::vector<int> candidates;
+        for (int n = lo; n <= hi; ++n)
+            if (std::find (usedNotes.begin(), usedNotes.end(), n) == usedNotes.end())
+                candidates.push_back (n);
+
+        const int note = candidates.empty() ? random.nextInt (juce::Range<int> (lo, hi + 1))
+                                            : candidates[(size_t) random.nextInt ((int) candidates.size())];
+        setParamValue (id ("note", track), (float) note);
+        usedNotes.push_back (note);
     }
 
+    // pattern
     uint32_t bits = 0;
     for (int s = 0; s < maxSteps; ++s)
         if (random.nextFloat() < density)
@@ -313,10 +359,84 @@ void PolyRhythmProcessor::randomizeTrack (int track)
     patterns[(size_t) track].store (bits);
 }
 
+void PolyRhythmProcessor::randomizeTrack (int track)
+{
+    const juce::ScopedLock sl (randomLock);
+    pushUndo();
+
+    std::vector<int> used;
+    for (int t = 0; t < numTracks; ++t)
+        if (t != track)
+            used.push_back (getTrackNote (t));
+
+    randomizeTrackInternal (track, used);
+}
+
 void PolyRhythmProcessor::randomizeAll()
 {
+    const juce::ScopedLock sl (randomLock);
+    pushUndo();
+
+    std::vector<int> used;
     for (int t = 0; t < numTracks; ++t)
-        randomizeTrack (t);
+        randomizeTrackInternal (t, used);
+}
+
+void PolyRhythmProcessor::clearTrack (int track)
+{
+    pushUndo();
+    setPattern (track, 0);
+}
+
+//==============================================================================
+PolyRhythmProcessor::Snapshot PolyRhythmProcessor::captureSnapshot() const
+{
+    Snapshot snap;
+    for (int t = 0; t < numTracks; ++t)
+    {
+        snap.patterns[(size_t) t] = patterns[(size_t) t].load();
+        int i = 0;
+        for (auto* base : snapshotParams)
+            snap.values[(size_t) t][(size_t) i++] = apvts.getRawParameterValue (id (base, t))->load();
+    }
+    return snap;
+}
+
+void PolyRhythmProcessor::restoreSnapshot (const Snapshot& snap)
+{
+    for (int t = 0; t < numTracks; ++t)
+    {
+        patterns[(size_t) t].store (snap.patterns[(size_t) t]);
+        int i = 0;
+        for (auto* base : snapshotParams)
+            setParamValue (id (base, t), snap.values[(size_t) t][(size_t) i++]);
+    }
+}
+
+void PolyRhythmProcessor::pushUndo()
+{
+    undoStack.push_back (captureSnapshot());
+    if (undoStack.size() > 200)
+        undoStack.erase (undoStack.begin());
+    redoStack.clear();
+}
+
+void PolyRhythmProcessor::undo()
+{
+    if (undoStack.empty())
+        return;
+    redoStack.push_back (captureSnapshot());
+    restoreSnapshot (undoStack.back());
+    undoStack.pop_back();
+}
+
+void PolyRhythmProcessor::redo()
+{
+    if (redoStack.empty())
+        return;
+    undoStack.push_back (captureSnapshot());
+    restoreSnapshot (redoStack.back());
+    redoStack.pop_back();
 }
 
 //==============================================================================

@@ -2,15 +2,16 @@
 
 Polyrhythmischer 6-Spur MIDI-Sequencer für macOS (Apple Silicon und Intel).
 
-- 6 Spuren, Noten ab C1 abwärts (C1, B0, A#0, A0, G#0, G0 – C3 = 60)
+- 6 Spuren, Standard-Noten C1, C#1, F#1, G#1, B1, C2 (C3 = 60)
 - Länge pro Spur 1/32 – 32/32, Rate pro Spur (1/32, 1/16, 1/8, 1/4, 1/16T, 1/8T)
-- Zufallsgenerator für alle Spuren + RND-Button pro Spur (Dichte, optional Länge)
+- Zufallsgenerator für alle Spuren + RND-Button pro Spur (alles außer Noten; optional Noten im Bereich C0–C8)
+- Rückgängig / Wiederherstellen
 - MIDI-Loop-Export als Datei oder per Drag & Drop in die DAW
 - Synchron zum Host-Transport, Standalone mit eigener Clock
 - Virtueller MIDI-Port „PolyRhythm32 Out“ (unabhängig vom DAW-Routing)
 
 ## Download
-Unter **Releases** → `polyrhythm32-v1.1.0` → `PolyRhythm32-macOS.zip`.
+Unter **Releases** → `polyrhythm32-v1.2.0` → `PolyRhythm32-macOS.zip`.
 Installation: siehe `scripts/LIESMICH.txt` (liegt auch im ZIP).
 
 Jeder Push auf den Branch `polyrhythm32` baut das Plugin über GitHub Actions neu und aktualisiert das Release.

@@ -16,17 +16,22 @@ POLYRHYTHM32 – Installation (macOS, Apple Silicon und Intel)
 
 
 BEDIENUNG
-- 6 Spuren, Noten ab C1 abwärts: C1, B0, A#0, A0, G#0, G0 (C3 = MIDI 60,
-  also 36–31 – passt auf die unteren Pads eines Drum Racks). Note pro Spur
-  mit den Pfeilen oder per Ziehen änderbar.
+- 6 Spuren, Standard-Noten: C1, C#1, F#1, G#1, B1, C2 (C3 = MIDI 60).
+  Note pro Spur mit den Pfeilen oder per Ziehen änderbar.
 - LÄNGE pro Spur 1/32 bis 32/32 Steps. Unterschiedliche Längen laufen
   gegeneinander -> Polyrhythmus. Die farbige Linie im Raster zeigt das
   Loop-Ende der Spur, Steps dahinter sind gespeichert, aber stumm.
 - RATE pro Spur: 1/32 (Standard), 1/16, 1/8, 1/4, 1/16T, 1/8T.
 - Steps anklicken oder mit gedrückter Maus über mehrere Steps ziehen.
 - RANDOM ALL würfelt alle Spuren neu, RND nur die jeweilige Spur.
-  "Dichte" bestimmt, wie viele Steps gesetzt werden. Mit "inkl. Länge"
-  wird auch die Spurlänge zufällig gewählt.
+  Geändert werden Pattern, Länge, Rate, Velocity und Gate – die Noten
+  bleiben, wie du sie eingestellt hast. "Dichte" bestimmt, wie viele
+  Steps gesetzt werden.
+- "inkl. Noten": würfelt auch die Noten. Dann erscheint ein Regler mit
+  zwei Griffen für den Notenbereich (C0 bis C8). Jede Spur bekommt eine
+  andere Note innerhalb des Bereichs (wenn der Bereich groß genug ist).
+- "Zurück" macht die letzte Änderung rückgängig (Zufall, CLR, Steps),
+  "Vor" stellt sie wieder her.
 - M = Mute, CLR = Spur löschen, Vel/Gate = Anschlagstärke und Notenlänge.
 - Läuft synchron zum Transport der DAW. In der Standalone-App gibt es
   PLAY und eine eigene BPM-Einstellung.

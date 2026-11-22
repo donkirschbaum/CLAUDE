@@ -4,6 +4,7 @@
 #include <juce_audio_utils/juce_audio_utils.h>
 #include <array>
 #include <atomic>
+#include <vector>
 
 class PolyRhythmProcessor : public juce::AudioProcessor,
                             private juce::Timer
@@ -51,7 +52,14 @@ public:
 
     void randomizeTrack (int track);
     void randomizeAll();
-    void clearTrack (int track) { setPattern (track, 0); }
+    void clearTrack (int track);
+
+    // Undo / Redo (message thread only)
+    void pushUndo();
+    void undo();
+    void redo();
+    bool canUndo() const { return ! undoStack.empty(); }
+    bool canRedo() const { return ! redoStack.empty(); }
 
     int getCurrentStep (int track) const { return currentStep[(size_t) track].load(); }
     bool isHostSynced() const { return hostSynced.load(); }
@@ -100,6 +108,19 @@ private:
     double internalPpq = 0.0;
     bool wasPlaying = false;
     double lastPpqEnd = 0.0;
+
+    static constexpr const char* snapshotParams[] = { "len", "rate", "note", "vel", "gate", "mute" };
+    struct Snapshot
+    {
+        std::array<uint32_t, numTracks> patterns {};
+        std::array<std::array<float, 6>, numTracks> values {};
+    };
+    Snapshot captureSnapshot() const;
+    void restoreSnapshot (const Snapshot&);
+    std::vector<Snapshot> undoStack, redoStack;
+
+    void randomizeTrackInternal (int track, std::vector<int>& usedNotes);
+    int pickRandomRate();
 
     void timerCallback() override;
     void generateBlock (juce::AudioBuffer<float>&, juce::MidiBuffer&);

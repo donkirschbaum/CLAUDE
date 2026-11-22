@@ -2,7 +2,7 @@
 
 namespace
 {
-    constexpr int editorW   = 1210;
+    constexpr int editorW   = 1290;
     constexpr int topH      = 92;
     constexpr int headerH   = 22;
     constexpr int rowH      = 64;
@@ -89,6 +89,7 @@ void StepGrid::mouseDown (const juce::MouseEvent& e)
     int t, s;
     if (! cellAt (e.getPosition(), t, s))
         return;
+    proc.pushUndo();
     paintValue = ! proc.getStep (t, s);
     proc.setStep (t, s, paintValue);
     lastTrack = t; lastStep = s;
@@ -172,7 +173,17 @@ PolyRhythmEditor::PolyRhythmEditor (PolyRhythmProcessor& p)
     addAndMakeVisible (title);
 
     randomAll.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff8a3ffc));
-    randomAll.onClick = [this] { proc.randomizeAll(); grid.repaint(); };
+    randomAll.onClick = [this] { proc.randomizeAll(); refreshAll(); };
+
+    undoButton.setButtonText (juce::String::fromUTF8 ("Zur\xc3\xbc" "ck"));
+    undoButton.setTooltip (juce::String::fromUTF8 ("R\xc3\xbc" "ckg\xc3\xa4ngig"));
+    undoButton.onClick = [this] { proc.undo(); refreshAll(); };
+    addAndMakeVisible (undoButton);
+
+    redoButton.setButtonText ("Vor");
+    redoButton.setTooltip ("Wiederherstellen");
+    redoButton.onClick = [this] { proc.redo(); refreshAll(); };
+    addAndMakeVisible (redoButton);
     addAndMakeVisible (randomAll);
 
     densityLabel.setText ("Dichte", juce::dontSendNotification);
@@ -182,9 +193,28 @@ PolyRhythmEditor::PolyRhythmEditor (PolyRhythmProcessor& p)
     addAndMakeVisible (density);
     densityA = std::make_unique<SA> (apvts, "density", density);
 
-    randLen.setButtonText (juce::String::fromUTF8 ("inkl. L\xc3\xa4nge"));
-    addAndMakeVisible (randLen);
-    randLenA = std::make_unique<BA> (apvts, "randLen", randLen);
+    randNotes.setTooltip ("Zufall veraendert auch die Noten (innerhalb des Bereichs)");
+    addAndMakeVisible (randNotes);
+    randNotesA = std::make_unique<BA> (apvts, "randNotes", randNotes);
+
+    noteRange.setSliderStyle (juce::Slider::TwoValueHorizontal);
+    noteRange.setTextBoxStyle (juce::Slider::NoTextBox, true, 0, 0);
+    noteRange.setRange (24.0, 120.0, 1.0);
+    noteRange.setColour (juce::Slider::trackColourId, juce::Colour (0xff8a3ffc));
+    noteRange.onValueChange = [this]
+    {
+        auto setP = [this] (const char* pid, double v)
+        {
+            if (auto* prm = proc.apvts.getParameter (pid))
+                prm->setValueNotifyingHost (prm->convertTo0to1 ((float) v));
+        };
+        setP ("noteLo", noteRange.getMinValue());
+        setP ("noteHi", noteRange.getMaxValue());
+        updateRangeFromParams();
+    };
+    addChildComponent (noteRange);
+    rangeLabel.setColour (juce::Label::textColourId, juce::Colour (0xffc9a6ff));
+    addChildComponent (rangeLabel);
 
     channelLabel.setText ("MIDI-Kanal", juce::dontSendNotification);
     addAndMakeVisible (channelLabel);
@@ -266,10 +296,10 @@ PolyRhythmEditor::PolyRhythmEditor (PolyRhythmProcessor& p)
         addAndMakeVisible (tc.mute);
 
         tc.rnd.setColour (juce::TextButton::buttonColourId, trackColours[t].withAlpha (0.35f));
-        tc.rnd.onClick = [this, t] { proc.randomizeTrack (t); grid.repaint(); };
+        tc.rnd.onClick = [this, t] { proc.randomizeTrack (t); refreshAll(); };
         addAndMakeVisible (tc.rnd);
 
-        tc.clr.onClick = [this, t] { proc.clearTrack (t); grid.repaint(); };
+        tc.clr.onClick = [this, t] { proc.clearTrack (t); refreshAll(); };
         addAndMakeVisible (tc.clr);
 
         tc.noteA = std::make_unique<SA> (apvts, PolyRhythmProcessor::id ("note", t), tc.note);
@@ -330,7 +360,7 @@ void PolyRhythmEditor::paint (juce::Graphics& g)
         g.fillRect (0, topH + headerH + t * rowH, getWidth(), 1);
 
     g.setColour (dimText);
-    g.drawText (juce::String::fromUTF8 ("Klick/Ziehen: Steps setzen  |  L\xc3\xa4nge 1/32 \xe2\x80\x93 32/32 pro Spur  |  Noten: C1 abw\xc3\xa4rts (C3 = 60)"),
+    g.drawText (juce::String::fromUTF8 ("Klick/Ziehen: Steps setzen  |  L\xc3\xa4nge 1/32 \xe2\x80\x93 32/32 pro Spur  |  C3 = 60"),
                 juce::Rectangle<int> (12, getHeight() - footerH, getWidth() - 24, footerH), juce::Justification::centredLeft);
 }
 
@@ -340,17 +370,20 @@ void PolyRhythmEditor::resized()
     auto line1 = juce::Rectangle<int> (12, 10, getWidth() - 24, 30);
     title.setBounds (line1.removeFromLeft (180));
     randomAll.setBounds (line1.removeFromLeft (130).reduced (2));
-    line1.removeFromLeft (16);
+    line1.removeFromLeft (4);
+    undoButton.setBounds (line1.removeFromLeft (64).reduced (2));
+    redoButton.setBounds (line1.removeFromLeft (48).reduced (2));
+    line1.removeFromLeft (14);
     densityLabel.setBounds (line1.removeFromLeft (52));
     density.setBounds (line1.removeFromLeft (170));
-    line1.removeFromLeft (10);
-    randLen.setBounds (line1.removeFromLeft (120));
-    line1.removeFromLeft (20);
-    channelLabel.setBounds (line1.removeFromLeft (76));
-    channel.setBounds (line1.removeFromLeft (100));
-    line1.removeFromLeft (16);
-    virtOut.setBounds (line1.removeFromLeft (130));
-    portLabel.setBounds (line1);
+    line1.removeFromLeft (12);
+    randNotes.setBounds (line1.removeFromLeft (110));
+    const bool showRange = randNotes.getToggleState();
+    noteRange.setVisible (showRange);
+    rangeLabel.setVisible (showRange);
+    noteRange.setBounds (line1.removeFromLeft (300));
+    line1.removeFromLeft (6);
+    rangeLabel.setBounds (line1.removeFromLeft (130));
 
     // line 2
     auto line2 = juce::Rectangle<int> (12, 50, getWidth() - 24, 30);
@@ -359,13 +392,22 @@ void PolyRhythmEditor::resized()
     bpmLabel.setBounds (line2.removeFromLeft (36));
     bpm.setBounds (line2.removeFromLeft (120));
     line2.removeFromLeft (6);
-    syncLabel.setBounds (line2.removeFromLeft (170));
+    syncLabel.setBounds (line2.removeFromLeft (160));
     exportLen.setBounds (line2.removeFromLeft (120).reduced (2));
     exportButton.setBounds (line2.removeFromLeft (160).reduced (2));
     line2.removeFromLeft (6);
     dragArea.setBounds (line2.removeFromLeft (180).reduced (1));
-    line2.removeFromLeft (8);
-    infoLabel.setBounds (line2);
+    line2.removeFromLeft (16);
+    channelLabel.setBounds (line2.removeFromLeft (76));
+    channel.setBounds (line2.removeFromLeft (100));
+    line2.removeFromLeft (14);
+    virtOut.setBounds (line2.removeFromLeft (130));
+
+    // footer (right side): export info + port name
+    auto footer = juce::Rectangle<int> (getWidth() / 2, getHeight() - footerH, getWidth() / 2 - 12, footerH);
+    portLabel.setBounds (footer.removeFromRight (170));
+    infoLabel.setBounds (footer);
+    infoLabel.setJustificationType (juce::Justification::centredRight);
 
     // tracks
     for (int t = 0; t < PolyRhythmProcessor::numTracks; ++t)
@@ -404,7 +446,32 @@ void PolyRhythmEditor::timerCallback()
     const auto port = proc.getVirtualPortName();
     portLabel.setText (port.isNotEmpty() ? juce::String::fromUTF8 ("\xe2\x97\x8f ") + port : juce::String(), juce::dontSendNotification);
     syncLabel.setText (synced ? "Sync: Host-Transport" : "Sync: intern (Standalone)", juce::dontSendNotification);
+    if (noteRange.isVisible() != randNotes.getToggleState())
+        resized();
+    undoButton.setEnabled (proc.canUndo());
+    redoButton.setEnabled (proc.canRedo());
+    if (! noteRange.isMouseButtonDown())
+        updateRangeFromParams();
     grid.repaint();
+}
+
+void PolyRhythmEditor::updateRangeFromParams()
+{
+    const int lo = (int) proc.apvts.getRawParameterValue ("noteLo")->load();
+    const int hi = (int) proc.apvts.getRawParameterValue ("noteHi")->load();
+    if (! noteRange.isMouseButtonDown())
+    {
+        noteRange.setMinAndMaxValues (juce::jmin (lo, hi), juce::jmax (lo, hi), juce::dontSendNotification);
+    }
+    auto name = [] (int n) { return juce::MidiMessage::getMidiNoteName (n, true, true, 3); };
+    rangeLabel.setText (juce::String::fromUTF8 ("Noten: ") + name (juce::jmin (lo, hi)) + juce::String::fromUTF8 (" \xe2\x80\x93 ") + name (juce::jmax (lo, hi)),
+                        juce::dontSendNotification);
+}
+
+void PolyRhythmEditor::refreshAll()
+{
+    timerCallback();
+    repaint();
 }
 
 void PolyRhythmEditor::exportMidi()
