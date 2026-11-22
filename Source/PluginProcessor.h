@@ -5,7 +5,8 @@
 #include <array>
 #include <atomic>
 
-class PolyRhythmProcessor : public juce::AudioProcessor
+class PolyRhythmProcessor : public juce::AudioProcessor,
+                            private juce::Timer
 {
 public:
     static constexpr int numTracks = 6;
@@ -14,7 +15,7 @@ public:
     static constexpr int maxExportBars = 64;
 
     PolyRhythmProcessor();
-    ~PolyRhythmProcessor() override = default;
+    ~PolyRhythmProcessor() override;
 
     //==============================================================================
     void prepareToPlay (double sampleRate, int samplesPerBlock) override;
@@ -68,6 +69,10 @@ public:
 
     juce::AudioProcessorValueTreeState apvts;
 
+    // Virtual MIDI output port (macOS CoreMIDI): works independently of DAW routing
+    juce::String getVirtualPortName() const;
+    static bool virtualPortSupported();
+
     static juce::String id (const char* base, int track) { return juce::String (base) + juce::String (track); }
 
 private:
@@ -95,6 +100,15 @@ private:
     double internalPpq = 0.0;
     bool wasPlaying = false;
     double lastPpqEnd = 0.0;
+
+    void timerCallback() override;
+    void generateBlock (juce::AudioBuffer<float>&, juce::MidiBuffer&);
+    void updateVirtualPort();
+
+    std::unique_ptr<juce::MidiOutput> virtualOut;
+    juce::SpinLock virtualOutLock;
+    juce::String virtualPortName;
+    int instanceNumber = 0;
 
     juce::Random random;
     juce::CriticalSection randomLock;

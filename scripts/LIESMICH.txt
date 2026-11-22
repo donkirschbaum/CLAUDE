@@ -40,8 +40,26 @@ MIDI-LOOP EXPORTIEREN
   16 Takte exportiert. Alternativ fest 1–32 Takte wählen.
   Gemutete Spuren werden nicht exportiert.
 
-LIVE-MIDI AUS DEM PLUGIN (Ableton)
-- PolyRhythm32 auf eine MIDI-Spur legen.
-- Zweite MIDI-Spur mit Drum Rack/Instrument anlegen: "MIDI From" = Spur
-  mit PolyRhythm32, darunter "PolyRhythm32" wählen, Monitor "In".
-- MIDI-Kanal oben rechts einstellbar (Standard 1).
+LIVE-MIDI IN ABLETON – WEG 1: VIRTUELLER MIDI-PORT (empfohlen)
+PolyRhythm32 meldet sich als eigenes MIDI-Gerät "PolyRhythm32 Out" an
+(Schalter "Virt. MIDI-Out" oben, standardmäßig an). Das funktioniert
+auch, wenn das Plugin in einem Rack liegt.
+1. PolyRhythm32 auf eine MIDI-Spur legen (egal ob direkt oder im Rack).
+2. Live > Einstellungen > Link, Tempo & MIDI: beim Eingang
+   "PolyRhythm32 Out" den Schalter "Spur" (Track) einschalten.
+3. Auf der Drum-Rack-Spur: "MIDI From" = "PolyRhythm32 Out",
+   Monitor = "In".
+Bei mehreren Instanzen heißen die Ports "PolyRhythm32 Out 2", "... 3" usw.
+Tipp: Liegt der Port auf der Drum-Spur und gleichzeitig Weg 2 aktiv,
+kommen die Noten doppelt – nur einen Weg benutzen.
+
+LIVE-MIDI IN ABLETON – WEG 2: INTERNES ROUTING
+Funktioniert nur, wenn PolyRhythm32 DIREKT auf der Spur liegt (nicht in
+einem Instrument- oder Audio-Effekt-Rack – Ableton zeigt den MIDI-Ausgang
+von Plugins in Racks nicht an).
+- Drum-Rack-Spur: "MIDI From" = Spur mit PolyRhythm32, im Feld darunter
+  "PolyRhythm32" wählen, Monitor "In".
+- Falls die VST3-Version dort nicht erscheint: die Audio-Unit-Version
+  (Plug-Ins > Audio Units > donkirschbaum) verwenden.
+
+MIDI-Kanal oben einstellbar (Standard 1).

@@ -73,14 +73,14 @@ private:
     PolyRhythmProcessor& proc;
     juce::LookAndFeel_V4 laf;
 
-    juce::Label title, densityLabel, bpmLabel, syncLabel, channelLabel, infoLabel;
+    juce::Label title, portLabel, densityLabel, bpmLabel, syncLabel, channelLabel, infoLabel;
     juce::TextButton randomAll { "RANDOM ALL" }, playButton { "PLAY" }, exportButton { "MIDI exportieren..." };
-    juce::ToggleButton randLen { "inkl. Laenge" };
+    juce::ToggleButton randLen { "inkl. Laenge" }, virtOut { "Virt. MIDI-Out" };
     juce::Slider density, bpm, channel;
     juce::ComboBox exportLen;
 
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> densityA, bpmA, channelA;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> randLenA, playA;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> randLenA, playA, virtOutA;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> exportLenA;
 
     std::array<TrackControls, PolyRhythmProcessor::numTracks> tracks;

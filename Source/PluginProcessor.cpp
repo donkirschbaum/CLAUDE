@@ -1,6 +1,8 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 #include <numeric>
+#include <mutex>
+#include <set>
 
 namespace
 {
@@ -33,6 +35,25 @@ namespace
 
         const int octave = text.substring (pos).getIntValue();
         return juce::jlimit (0, 127, (octave + (5 - middleCOctave)) * 12 + semitone);
+    }
+
+    std::mutex instanceMutex;
+    std::set<int> usedInstances;
+
+    int acquireInstanceNumber()
+    {
+        std::lock_guard<std::mutex> lg (instanceMutex);
+        int n = 1;
+        while (usedInstances.count (n) != 0)
+            ++n;
+        usedInstances.insert (n);
+        return n;
+    }
+
+    void releaseInstanceNumber (int n)
+    {
+        std::lock_guard<std::mutex> lg (instanceMutex);
+        usedInstances.erase (n);
     }
 
     const int defaultLengths[PolyRhythmProcessor::numTracks] = { 32, 24, 20, 16, 12, 10 };
@@ -113,6 +134,9 @@ juce::AudioProcessorValueTreeState::ParameterLayout PolyRhythmProcessor::createL
     layout.add (std::make_unique<juce::AudioParameterInt> (
         juce::ParameterID { "channel", 1 }, "MIDI Kanal", 1, 16, 1));
 
+    layout.add (std::make_unique<juce::AudioParameterBool> (
+        juce::ParameterID { "virtOut", 1 }, "Virtueller MIDI-Ausgang", true));
+
     layout.add (std::make_unique<juce::AudioParameterChoice> (
         juce::ParameterID { "exportLen", 1 }, "Export Laenge",
         juce::StringArray { "Auto (Loop)", "1 Takt", "2 Takte", "4 Takte", "8 Takte", "16 Takte", "32 Takte" }, 0));
@@ -141,6 +165,71 @@ PolyRhythmProcessor::PolyRhythmProcessor()
 
     for (auto& s : currentStep)
         s.store (-1);
+
+    instanceNumber = acquireInstanceNumber();
+    startTimerHz (2);
+}
+
+PolyRhythmProcessor::~PolyRhythmProcessor()
+{
+    stopTimer();
+    {
+        const juce::SpinLock::ScopedLockType sl (virtualOutLock);
+        virtualOut.reset();
+    }
+    releaseInstanceNumber (instanceNumber);
+}
+
+//==============================================================================
+bool PolyRhythmProcessor::virtualPortSupported()
+{
+   #if JUCE_MAC || JUCE_LINUX || JUCE_IOS
+    return true;
+   #else
+    return false;
+   #endif
+}
+
+juce::String PolyRhythmProcessor::getVirtualPortName() const
+{
+    return virtualPortName;
+}
+
+void PolyRhythmProcessor::timerCallback()
+{
+    updateVirtualPort();
+}
+
+void PolyRhythmProcessor::updateVirtualPort()
+{
+    if (! virtualPortSupported())
+        return;
+
+    const bool want = apvts.getRawParameterValue ("virtOut")->load() > 0.5f;
+    const bool have = virtualOut != nullptr;
+
+    if (want && ! have)
+    {
+        const auto name = juce::String ("PolyRhythm32 Out") + (instanceNumber > 1 ? " " + juce::String (instanceNumber) : juce::String());
+        if (auto out = juce::MidiOutput::createNewDevice (name))
+        {
+            out->startBackgroundThread();
+            const juce::SpinLock::ScopedLockType sl (virtualOutLock);
+            virtualOut = std::move (out);
+            virtualPortName = name;
+        }
+    }
+    else if (! want && have)
+    {
+        std::unique_ptr<juce::MidiOutput> old;
+        {
+            const juce::SpinLock::ScopedLockType sl (virtualOutLock);
+            old = std::move (virtualOut);
+            virtualPortName = {};
+        }
+        if (old != nullptr)
+            old->stopBackgroundThread();
+    }
 }
 
 bool PolyRhythmProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
@@ -243,6 +332,18 @@ void PolyRhythmProcessor::flushNoteOffs (juce::MidiBuffer& midi, int sampleOffse
 }
 
 void PolyRhythmProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi)
+{
+    generateBlock (buffer, midi);
+
+    if (! midi.isEmpty())
+    {
+        const juce::SpinLock::ScopedTryLockType sl (virtualOutLock);
+        if (sl.isLocked() && virtualOut != nullptr)
+            virtualOut->sendBlockOfMessages (midi, juce::Time::getMillisecondCounterHiRes(), sampleRate);
+    }
+}
+
+void PolyRhythmProcessor::generateBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi)
 {
     juce::ScopedNoDenormals noDenormals;
     buffer.clear();

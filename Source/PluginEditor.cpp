@@ -193,6 +193,14 @@ PolyRhythmEditor::PolyRhythmEditor (PolyRhythmProcessor& p)
     addAndMakeVisible (channel);
     channelA = std::make_unique<SA> (apvts, "channel", channel);
 
+    virtOut.setTooltip ("Eigener MIDI-Port (CoreMIDI). In der DAW als MIDI-Eingang waehlbar.");
+    addAndMakeVisible (virtOut);
+    virtOutA = std::make_unique<BA> (apvts, "virtOut", virtOut);
+    virtOut.setEnabled (PolyRhythmProcessor::virtualPortSupported());
+    portLabel.setColour (juce::Label::textColourId, juce::Colour (0xff5fd68a));
+    portLabel.setFont (juce::FontOptions (12.0f));
+    addAndMakeVisible (portLabel);
+
     playButton.setClickingTogglesState (true);
     playButton.setColour (juce::TextButton::buttonOnColourId, juce::Colour (0xff36b56a));
     addAndMakeVisible (playButton);
@@ -334,12 +342,15 @@ void PolyRhythmEditor::resized()
     randomAll.setBounds (line1.removeFromLeft (130).reduced (2));
     line1.removeFromLeft (16);
     densityLabel.setBounds (line1.removeFromLeft (52));
-    density.setBounds (line1.removeFromLeft (200));
+    density.setBounds (line1.removeFromLeft (170));
     line1.removeFromLeft (10);
     randLen.setBounds (line1.removeFromLeft (120));
     line1.removeFromLeft (20);
     channelLabel.setBounds (line1.removeFromLeft (76));
     channel.setBounds (line1.removeFromLeft (100));
+    line1.removeFromLeft (16);
+    virtOut.setBounds (line1.removeFromLeft (130));
+    portLabel.setBounds (line1);
 
     // line 2
     auto line2 = juce::Rectangle<int> (12, 50, getWidth() - 24, 30);
@@ -390,6 +401,8 @@ void PolyRhythmEditor::timerCallback()
     const bool synced = proc.isHostSynced();
     playButton.setEnabled (! synced);
     bpm.setEnabled (! synced);
+    const auto port = proc.getVirtualPortName();
+    portLabel.setText (port.isNotEmpty() ? juce::String::fromUTF8 ("\xe2\x97\x8f ") + port : juce::String(), juce::dontSendNotification);
     syncLabel.setText (synced ? "Sync: Host-Transport" : "Sync: intern (Standalone)", juce::dontSendNotification);
     grid.repaint();
 }
