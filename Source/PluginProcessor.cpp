@@ -148,6 +148,9 @@ juce::AudioProcessorValueTreeState::ParameterLayout PolyRhythmProcessor::createL
     layout.add (std::make_unique<juce::AudioParameterInt> (
         juce::ParameterID { "channel", 1 }, "MIDI Kanal", 1, 16, 1));
 
+    layout.add (std::make_unique<juce::AudioParameterChoice> (
+        juce::ParameterID { "master", 1 }, "Master Geschwindigkeit", getMasterNames(), 0));
+
     layout.add (std::make_unique<juce::AudioParameterBool> (
         juce::ParameterID { "virtOut", 1 }, "Virtueller MIDI-Ausgang", true));
 
@@ -280,9 +283,52 @@ int PolyRhythmProcessor::getTrackLength (int track) const
     return juce::jlimit (1, maxSteps, (int) apvts.getRawParameterValue (id ("len", track))->load());
 }
 
+juce::StringArray PolyRhythmProcessor::getMasterNames()
+{
+    return { "1/32", "1/24", "1/16", "1/12", "1/8", "1/6", "1/4", "1/3", "1/2", "1/1" };
+}
+
+double PolyRhythmProcessor::masterIndexToQuarters (int index)
+{
+    static const double q[] = { 0.125, 1.0 / 6.0, 0.25, 1.0 / 3.0, 0.5, 2.0 / 3.0, 1.0, 4.0 / 3.0, 2.0, 4.0 };
+    return q[juce::jlimit (0, 9, index)];
+}
+
+double PolyRhythmProcessor::getMasterFactor() const
+{
+    // 1/32 = original speed, everything slower scales all tracks together (polyrhythm stays intact)
+    return masterIndexToQuarters ((int) apvts.getRawParameterValue ("master")->load()) / 0.125;
+}
+
 double PolyRhythmProcessor::getTrackStepQuarters (int track) const
 {
-    return rateIndexToQuarters ((int) apvts.getRawParameterValue (id ("rate", track))->load());
+    return rateIndexToQuarters ((int) apvts.getRawParameterValue (id ("rate", track))->load()) * getMasterFactor();
+}
+
+void PolyRhythmProcessor::handleIncomingMidi (const juce::MidiBuffer& in)
+{
+    for (const auto md : in)
+    {
+        const auto msg = md.getMessage();
+        if (! msg.isController())
+            continue;
+
+        const int cc = msg.getControllerNumber();
+        if (masterLearning.load())
+        {
+            masterCC.store (cc);
+            masterLearning.store (false);
+        }
+
+        if (cc == masterCC.load())
+        {
+            const int n = getMasterNames().size();
+            const int idx = juce::roundToInt (msg.getControllerValue() / 127.0 * (n - 1));
+            if (auto* p = apvts.getParameter ("master"))
+                if (juce::roundToInt (p->convertFrom0to1 (p->getValue())) != idx)
+                    p->setValueNotifyingHost (p->convertTo0to1 ((float) idx));
+        }
+    }
 }
 
 int PolyRhythmProcessor::getTrackNote (int track) const
@@ -467,6 +513,7 @@ void PolyRhythmProcessor::generateBlock (juce::AudioBuffer<float>& buffer, juce:
 {
     juce::ScopedNoDenormals noDenormals;
     buffer.clear();
+    handleIncomingMidi (midi);
     midi.clear();
 
     const int numSamples = buffer.getNumSamples();
@@ -703,6 +750,7 @@ void PolyRhythmProcessor::getStateInformation (juce::MemoryBlock& destData)
     auto pat = state.getOrCreateChildWithName ("Patterns", nullptr);
     for (int t = 0; t < numTracks; ++t)
         pat.setProperty ("p" + juce::String (t), (juce::int64) patterns[(size_t) t].load(), nullptr);
+    state.setProperty ("masterCC", masterCC.load(), nullptr);
 
     if (auto xml = state.createXml())
         copyXmlToBinary (*xml, destData);
@@ -725,6 +773,7 @@ void PolyRhythmProcessor::setStateInformation (const void* data, int sizeInBytes
                     patterns[(size_t) t].store ((uint32_t) (juce::int64) pat.getProperty (key));
             }
 
+        masterCC.store (tree.hasProperty ("masterCC") ? (int) tree.getProperty ("masterCC") : -1);
         apvts.replaceState (tree);
     }
 }

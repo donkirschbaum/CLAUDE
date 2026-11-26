@@ -2,7 +2,7 @@
 
 namespace
 {
-    constexpr int editorW   = 1290;
+    constexpr int editorW   = 1400;
     constexpr int topH      = 92;
     constexpr int headerH   = 22;
     constexpr int rowH      = 64;
@@ -231,6 +231,42 @@ PolyRhythmEditor::PolyRhythmEditor (PolyRhythmProcessor& p)
     portLabel.setFont (juce::FontOptions (12.0f));
     addAndMakeVisible (portLabel);
 
+    // ---- master speed knob
+    masterLabel.setText (juce::String::fromUTF8 ("MASTER-TEMPO"), juce::dontSendNotification);
+    masterLabel.setFont (juce::FontOptions (12.0f, juce::Font::bold));
+    masterLabel.setJustificationType (juce::Justification::centred);
+    addAndMakeVisible (masterLabel);
+
+    masterKnob.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
+    masterKnob.setTextBoxStyle (juce::Slider::TextBoxBelow, true, 56, 18);
+    masterKnob.setColour (juce::Slider::rotarySliderFillColourId, juce::Colour (0xffff5a5f));
+    masterKnob.setColour (juce::Slider::thumbColourId, juce::Colours::white);
+    masterKnob.setTooltip ("Master-Geschwindigkeit: 1/32 = Originaltempo, alle Spuren werden gemeinsam langsamer");
+    addAndMakeVisible (masterKnob);
+    masterA = std::make_unique<SA> (apvts, "master", masterKnob);
+
+    learnButton.setButtonText ("MIDI Learn");
+    learnButton.setTooltip ("Klicken, dann Regler am Controller bewegen. Alt-Klick loescht die Zuweisung.");
+    learnButton.setColour (juce::TextButton::buttonOnColourId, juce::Colour (0xffff5a5f));
+    learnButton.onClick = [this]
+    {
+        if (juce::ModifierKeys::currentModifiers.isAltDown())
+        {
+            proc.masterCC.store (-1);           // Alt-Klick: Zuweisung loeschen
+            proc.masterLearning.store (false);
+        }
+        else
+        {
+            proc.masterLearning.store (! proc.masterLearning.load());
+        }
+    };
+    addAndMakeVisible (learnButton);
+
+    ccLabel.setFont (juce::FontOptions (12.0f));
+    ccLabel.setJustificationType (juce::Justification::centred);
+    ccLabel.setColour (juce::Label::textColourId, dimText);
+    addAndMakeVisible (ccLabel);
+
     playButton.setClickingTogglesState (true);
     playButton.setColour (juce::TextButton::buttonOnColourId, juce::Colour (0xff36b56a));
     addAndMakeVisible (playButton);
@@ -385,6 +421,16 @@ void PolyRhythmEditor::resized()
     line1.removeFromLeft (6);
     rangeLabel.setBounds (line1.removeFromLeft (130));
 
+    // master knob block (right side of the top bar)
+    {
+        auto m = juce::Rectangle<int> (getWidth() - 210, 2, 200, topH - 4);
+        masterKnob.setBounds (m.removeFromLeft (90));
+        m.removeFromLeft (8);
+        masterLabel.setBounds (m.getX(), m.getY() + 6, m.getWidth(), 16);
+        learnButton.setBounds (m.getX(), m.getY() + 26, m.getWidth(), 26);
+        ccLabel.setBounds (m.getX(), m.getY() + 56, m.getWidth(), 20);
+    }
+
     // line 2
     auto line2 = juce::Rectangle<int> (12, 50, getWidth() - 24, 30);
     playButton.setBounds (line2.removeFromLeft (80).reduced (2));
@@ -448,6 +494,11 @@ void PolyRhythmEditor::timerCallback()
     syncLabel.setText (synced ? "Sync: Host-Transport" : "Sync: intern (Standalone)", juce::dontSendNotification);
     if (noteRange.isVisible() != randNotes.getToggleState())
         resized();
+    const bool learning = proc.masterLearning.load();
+    const int cc = proc.masterCC.load();
+    learnButton.setToggleState (learning, juce::dontSendNotification);
+    learnButton.setButtonText (learning ? "Warte auf CC..." : "MIDI Learn");
+    ccLabel.setText (cc >= 0 ? "CC " + juce::String (cc) : "nicht zugewiesen", juce::dontSendNotification);
     undoButton.setEnabled (proc.canUndo());
     redoButton.setEnabled (proc.canRedo());
     if (! noteRange.isMouseButtonDown())

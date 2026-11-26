@@ -78,7 +78,10 @@ private:
     juce::Label title, portLabel, densityLabel, bpmLabel, syncLabel, channelLabel, infoLabel;
     juce::TextButton randomAll { "RANDOM ALL" }, playButton { "PLAY" }, exportButton { "MIDI exportieren..." };
     juce::ToggleButton randNotes { "inkl. Noten" }, virtOut { "Virt. MIDI-Out" };
-    juce::TextButton undoButton, redoButton;
+    juce::TextButton undoButton, redoButton, learnButton;
+    juce::Slider masterKnob;
+    juce::Label masterLabel, ccLabel;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> masterA;
     juce::Slider noteRange;
     juce::Label rangeLabel;
     juce::Slider density, bpm, channel;

@@ -12,7 +12,7 @@ class PolyRhythmProcessor : public juce::AudioProcessor,
 public:
     static constexpr int numTracks = 6;
     static constexpr int maxSteps  = 32;
-    static constexpr int ticksPerQuarter = 960;
+    static constexpr int ticksPerQuarter = 1440; // divisible by all master x rate combinations
     static constexpr int maxExportBars = 64;
 
     PolyRhythmProcessor();
@@ -72,6 +72,14 @@ public:
     juce::MidiFile createMidiLoop (int& totalBarsOut, bool& wasCapped) const;
     bool writeMidiLoop (const juce::File& file, juce::String& infoOut) const;
 
+    static juce::StringArray getMasterNames();
+    static double masterIndexToQuarters (int index);
+    double getMasterFactor() const;
+
+    // MIDI learn for the master knob
+    std::atomic<int> masterCC { -1 };
+    std::atomic<bool> masterLearning { false };
+
     static juce::StringArray getRateNames();
     static double rateIndexToQuarters (int index);
 
@@ -122,6 +130,7 @@ private:
     void randomizeTrackInternal (int track, std::vector<int>& usedNotes);
     int pickRandomRate();
 
+    void handleIncomingMidi (const juce::MidiBuffer&);
     void timerCallback() override;
     void generateBlock (juce::AudioBuffer<float>&, juce::MidiBuffer&);
     void updateVirtualPort();

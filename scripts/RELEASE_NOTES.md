@@ -1,3 +1,5 @@
+**Neu in 1.3.0:** Master-Tempo-Drehregler (1/32 … 1/1) für alle Spuren gemeinsam, per MIDI Learn oder Ableton-MIDI-Map steuerbar.
+
 **Neu in 1.2.0:**
 - Standard-Noten C1, C#1, F#1, G#1, B1, C2
 - Zufall ändert Pattern, Länge, Rate, Velocity und Gate – Noten bleiben
