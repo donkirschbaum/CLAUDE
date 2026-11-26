@@ -335,22 +335,91 @@ void Engine::tick() {
   setFilter();
 }
 
-/* ---------- analog filter ---------- */
+/* ---------- analog filter section: 8 filter boards ---------- */
 void Engine::setFilter() {
+  const int b = G.brd;
+  if (b != lastBrd) { lastBrd = b; f1 = F1(); f2 = F2(); std::fill(buf.begin(), buf.end(), 0.0f); }
   cutS += (cutB - cutS) * .5;
-  auto fcOf = [this](double b){ return std::min(13.0 * std::pow(2.0, b / 24), sr * .45); };
+  auto fcOf = [this](double v){ return std::min(13.0 * std::pow(2.0, v / 24), sr * .45); };
   const double f = fcOf(cutS), r = resB / 255.0;
-  if (G.brd == 2) {
-    auto svf = [this](double fr, double k, double& a1, double& a2, double& a3){ const double g = std::tan(M_PI * std::min(fr, sr * .49) / sr); a1 = 1 / (1 + g * (g + k)); a2 = g * a1; a3 = g * a2; };
-    fc.k1 = 2 - 2 * r * .985; svf(f, fc.k1, fc.a1, fc.a2, fc.a3);
-    fc.k2 = 2 - 2 * (cv2 / 255.0) * .985; svf(fcOf(cv1), fc.k2, fc.b1, fc.b2, fc.b3);
-  } else if (G.brd == 4) { fc.F = std::min(1.0, 2 * std::sin(M_PI * f / (4 * sr))); fc.q = 2 - r * 1.97; fc.drv = 1 + cv1 / 255.0 * 5; }
-  else { fc.g = 1 - std::exp(-2 * M_PI * f / (2 * sr)); fc.k = r * 4.1; }
+  auto svf = [this](double fr, double k, double& a1, double& a2, double& a3){ const double g = std::tan(M_PI * std::min(fr, sr * .49) / sr); a1 = 1 / (1 + g * (g + k)); a2 = g * a1; a3 = g * a2; };
+  bpmNow = hostBpm > 0 ? hostBpm : (P[k_bpm] < 40 ? 120 : P[k_bpm]);
+  if (b == 2) { fc.k1 = 2 - 2 * r * .985; svf(f, fc.k1, fc.a1, fc.a2, fc.a3); fc.k2 = 2 - 2 * (cv2 / 255.0) * .985; svf(fcOf(cv1), fc.k2, fc.b1, fc.b2, fc.b3); }
+  else if (b == 3) { fc.k1 = 2 - 2 * r * .98; svf(f, fc.k1, fc.a1, fc.a2, fc.a3); }
+  else if (b == 4) { fc.F = std::min(1.0, 2 * std::sin(M_PI * f / (4 * sr))); fc.q = 2 - r * 1.97; fc.drv = P[k_cut2] > 0 ? 4.5 : 1.2; fc.fmfb = P[k_res2] > 0; }
+  else if (b == 7) { fc.k1 = 2 - 2 * r * .97; svf(f, fc.k1, fc.a1, fc.a2, fc.a3); fc.spfb = P[k_cut2] / 127.0; }
+  else {
+    double g = 1 - std::exp(-2 * M_PI * f / (2 * sr)), k = r * 4.1;
+    if (b == 1) k = r * 4.4;
+    if (b == 5) { const int fl = P[k_fm2] & 3; k = (fl & 1) ? r * 4.9 : r * 4.1 * .6; if (fl == 2) { wob += 2 * M_PI * .7 / CR; g *= 1 + .12 * std::sin(wob); } }
+    fc.g = std::min(.95, g); fc.k = k;
+    if (b == 1) fc.hpA = std::exp(-2 * M_PI * fcOf(cv1) / sr);
+    if (b == 6) {
+      const double t = .02 + std::pow(P[k_cut2] / 127.0, 1.5) * .98;
+      fc.dlyT = std::min(t * sr, (double) buf.size() - 4); fc.dlyLvl = P[k_res2] / 63.0; fc.dlyFb = std::min(15, P[k_fm1]) / 15.0 * .92;
+      const int tl = std::min(15, P[k_fm2]); fc.tilt = tl;
+      fc.tiltA = tl < 8 ? std::exp(-2 * M_PI * (700 * std::pow(2.0, tl * .55)) / sr) : tl > 8 ? std::exp(-2 * M_PI * (60 * std::pow(2.0, (tl - 8) * .75)) / sr) : 0;
+    }
+  }
+}
+
+double Engine::dread(double d) const {
+  const int N = (int) buf.size(), M = N - 1; double p = bw - d; while (p < 0) p += N;
+  const int i = (int) p; const double fr = p - i; return buf[(size_t) (i & M)] + (buf[(size_t) ((i + 1) & M)] - buf[(size_t) (i & M)]) * fr;
+}
+void Engine::dwrite(double v) { buf[(size_t) bw] = (float) v; bw = (bw + 1) & ((int) buf.size() - 1); }
+
+double Engine::bbd(double y) {
+  if (!(f1.dc > 0)) f1.dc = fc.dlyT;
+  f1.dc += (fc.dlyT - f1.dc) * .0004;
+  double w = dread(f1.dc); f1.bl += (w - f1.bl) * .45; w = f1.bl;
+  double fb = w;
+  if (fc.tilt < 8) { f1.tz = fc.tiltA * f1.tz + (1 - fc.tiltA) * fb; fb = f1.tz; }
+  else if (fc.tilt > 8) { f1.tz = fc.tiltA * f1.tz + (1 - fc.tiltA) * fb; fb = fb - f1.tz; }
+  dwrite(std::tanh(y + fc.dlyFb * fb));
+  return y + fc.dlyLvl * w;
+}
+
+double Engine::fx(double y) {
+  const double p1 = P[k_cut2] / 127.0, p2 = P[k_res2] / 63.0, beat = sr * 60 / bpmNow, maxD = (double) buf.size() - 4;
+  const int prog = std::min(15, P[k_fm2]); const int N = (int) buf.size();
+  auto echo = [&](double d, double fb, double mix, bool dark) {
+    d = std::min(maxD, std::max(1.0, d)); double w = dread(d);
+    if (dark) { f1.dl += (w - f1.dl) * .12; w = f1.dl; }
+    dwrite(std::tanh(y + fb * w)); return y + mix * w; };
+  switch (prog) {
+    case 0: { const double d = std::tanh(y * (1 + p1 * 30)) * .8; f1.tone += (d - f1.tone) * std::min(1.0, .03 + p2 * .97); return f1.tone; }
+    case 1: { const int n = 1 + (int) std::floor(p1 * 40); if (++f1.cc >= n) { f1.cc = 0; const double q = std::pow(2.0, 15 - p2 * 13); f1.ch = std::round(y * q) / q; } return f1.ch; }
+    case 2: case 3: { const double d = (.0002 + p1 * .02) * sr, w = dread(d), fb = (prog == 2 ? 1 : -1) * p2 * .95; const double o = y + fb * w; dwrite(o); return o * .7; }
+    case 4: { f1.rp += (20 * std::pow(2.0, p1 * 9)) / sr; if (f1.rp >= 1) f1.rp -= 1; return y * (1 - p2) + y * std::sin(2 * M_PI * f1.rp) * p2; }
+    case 5: return echo((.05 + p1 * .95) * sr, 0, p2 * .8, false);
+    case 6: return echo((.05 + p1 * .95) * sr, p2 * .9, .5, false);
+    case 7: return echo((.05 + p1 * .95) * sr, p2 * .95, .5, true);
+    case 8: return echo(beat / 4 * (1 + std::floor(p1 * 15)), p2 * .9, .5, false);
+    case 9: return echo(beat / 4 * (1 + std::floor(p1 * 15)), p2 * .95, .5, true);
+    case 10: return echo(beat / 4, p1 * .9, p2, false);
+    case 11: return echo(beat / 3, p1 * .9, p2, false);
+    case 12: return echo(beat / 2, p1 * .9, p2, false);
+    case 13: return echo(beat * .75, p1 * .9, p2, false);
+    case 14: {
+      const int len = (int) std::min(maxD, std::floor((.1 + p1 * 1.9) * sr));
+      if (p2 >= .5) { if (!f1.lp0) { f1.lp0 = 1; f1.lpos = 0; f1.lst = bw; } const int i = (f1.lst - len + f1.lpos + N) & (N - 1); f1.lpos = (f1.lpos + 1) % std::max(1, len); return buf[(size_t) i]; }
+      f1.lp0 = 0; dwrite(y); return y;
+    }
+    default: {
+      const int st = (int) std::lround(p1 * 24) - 12; const double ratio = std::pow(2.0, st / 12.0), win = .05 * sr; dwrite(y);
+      f1.ps += 1 - ratio; if (f1.ps < 0) f1.ps += win; if (f1.ps >= win) f1.ps -= win;
+      const double ps2 = std::fmod(f1.ps + win / 2, win);
+      const double w = dread(f1.ps + 2) * std::sin(M_PI * f1.ps / win) + dread(ps2 + 2) * std::sin(M_PI * ps2 / win);
+      return y * (1 - p2) + w * p2;
+    }
+  }
 }
 
 double Engine::filt(double x) {
   static const double P4[15][5] = {{0,0,0,0,1},{0,0,0,1,0},{0,0,1,0,0},{0,1,0,0,0},{1,-1,0,0,0},{1,-2,1,0,0},{1,-3,3,-1,0},{0,2,-2,0,0},{0,0,4,-8,4},{1,-2,2,0,0},{1,-4,8,-8,4},{0,0,1,-2,1},{0,1,-3,3,-1},{.5,-1,1,0,.5},{.5,-2,4,-4,2.5}};
-  if (G.brd == 2) {
+  const int b = G.brd;
+  if (b == 2) {
     const double v3 = x - f1.ic2, v1 = fc.a1 * f1.ic1 + fc.a2 * v3, v2 = f1.ic2 + fc.a2 * f1.ic1 + fc.a3 * v3;
     f1.ic1 = 2 * v1 - f1.ic1; f1.ic2 = 2 * v2 - f1.ic2;
     const int m1 = P[k_fm1] % 3; const double y1 = m1 == 0 ? v2 : m1 == 1 ? v1 : x - fc.k1 * v1 - v2;
@@ -361,15 +430,33 @@ double Engine::filt(double x) {
     f1.ic1 = std::tanh(f1.ic1 * .5) * 2; f2.ic1 = std::tanh(f2.ic1 * .5) * 2;
     return serial ? y2 : (y1 + y2) * .6;
   }
-  if (G.brd == 4) {
+  if (b == 3 || b == 7) {
+    const double inx = b == 7 ? x + fc.spfb * 1.6 * std::tanh(2 * f1.spy) : x;
+    const double v3 = inx - f1.ic2, v1 = fc.a1 * f1.ic1 + fc.a2 * v3, v2 = f1.ic2 + fc.a2 * f1.ic1 + fc.a3 * v3;
+    f1.ic1 = 2 * v1 - f1.ic1; f1.ic2 = 2 * v2 - f1.ic2;
+    const double hp = inx - fc.k1 * v1 - v2; double y;
+    if (b == 3) { const int m = std::min(4, P[k_fm1]); y = m == 0 ? v2 : m == 1 ? v1 : m == 2 ? hp : m == 3 ? v2 + hp : inx - 2 * fc.k1 * v1; return fx(y); }
+    const int m = P[k_fm1] & 3; y = m == 0 ? v2 : m == 1 ? v1 : m == 2 ? hp : inx - 2 * fc.k1 * v1;
+    f1.ic1 = std::tanh(f1.ic1 * .4) * 2.5; f1.spy = y; return y * .8;
+  }
+  if (b == 4) {
     x = std::tanh(x * fc.drv); double hp = 0;
-    for (int j = 0; j < 2; ++j) { f1.lp += fc.F * f1.bp; hp = x - f1.lp - fc.q * f1.bp; f1.bp += fc.F * hp; f1.bp = std::max(-1.3, std::min(1.3, f1.bp)); f1.lp = std::max(-2.0, std::min(2.0, f1.lp)); }
+    for (int j = 0; j < 2; ++j) {
+      double F = fc.F; if (fc.fmfb) F = std::min(1.0, std::max(.002, F * (1 + .9 * f1.lp)));
+      f1.lp += F * f1.bp; hp = x - f1.lp - fc.q * f1.bp; f1.bp += F * hp;
+      f1.bp = std::max(-1.3, std::min(1.3, f1.bp)); f1.lp = std::max(-2.0, std::min(2.0, f1.lp));
+    }
     return (P[k_fm1] % 2) ? f1.bp : f1.lp;
   }
   const double g = fc.g, k = fc.k; double u = 0;
-  for (int j = 0; j < 2; ++j) { u = std::tanh(x * (1 + k * .4) - k * f1.y4); f1.y1 += g * (u - f1.y1); f1.y2 += g * (f1.y1 - f1.y2); f1.y3 += g * (f1.y2 - f1.y3); f1.y4 += g * (f1.y3 - f1.y4); }
-  if (G.brd == 5) { const double* m = P4[std::min(14, P[k_fm1])]; return (m[0] * u + m[1] * f1.y1 + m[2] * f1.y2 + m[3] * f1.y3 + m[4] * f1.y4) * .8; }
-  return f1.y4;
+  const int fl = P[k_fm2] & 3;
+  const double sat = b == 1 ? .7 : b == 5 ? (fl == 3 ? 2.2 : fl == 1 ? 1.4 : 1) : 1;
+  for (int j = 0; j < 2; ++j) { u = std::tanh((x * (1 + k * .4) - k * f1.y4) * sat) / sat; f1.y1 += g * (u - f1.y1); f1.y2 += g * (f1.y1 - f1.y2); f1.y3 += g * (f1.y2 - f1.y3); f1.y4 += g * (f1.y3 - f1.y4); }
+  double y = f1.y4;
+  if (b == 5) { const double* m = P4[std::min(14, P[k_fm1])]; y = (m[0] * u + m[1] * f1.y1 + m[2] * f1.y2 + m[3] * f1.y3 + m[4] * f1.y4) * .8; }
+  if (b == 1) { f1.hz = fc.hpA * f1.hz + (1 - fc.hpA) * y; y -= f1.hz; }
+  if (b == 6) y = bbd(y);
+  return y;
 }
 
 /* ---------- digital oscillators ---------- */
@@ -459,7 +546,7 @@ void Engine::process(float* L, float* R, int n) {
     vcaF += (vcaB / 255.0 - vcaF) * vcaC; y *= vcaF;
     const double yy = y - dcx + .995 * dcy; dcx = y; dcy = yy;
     double out = yy * vol * .9; out = out > 1.5 ? 1 : out < -1.5 ? -1 : out - out * out * out / 6.75;
-    if (!std::isfinite(out)) { out = 0; f1 = F1(); f2 = F2(); dcx = dcy = 0; }
+    if (!std::isfinite(out)) { out = 0; f1 = F1(); f2 = F2(); dcx = dcy = 0; std::fill(buf.begin(), buf.end(), 0.0f); }
     L[i] = (float)out; if (R) R[i] = (float)out;
   }
 }

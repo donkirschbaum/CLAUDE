@@ -95,8 +95,10 @@ private:
   int cutB = 128, resB = 0, cv1 = 0, cv2 = 0, vcaB = 0; double cutS = 128; bool osc2Off = false;
   Osc o[2]; double subPh = 0; int trc = 0, trRng = 0, trDec = 0, trGain = 0;
   int noise = 1, crushC = 0, crushV = 128, dOut = 128;
-  struct F1 { double y1=0,y2=0,y3=0,y4=0,ic1=0,ic2=0,lp=0,bp=0; } f1; struct F2 { double ic1=0, ic2=0; } f2;
-  struct FC { double g=.1,k=0,a1=1,a2=0,a3=0,k1=2,b1=1,b2=0,b3=0,k2=2,F=.1,q=2,drv=1; } fc;
+  struct F1 { double y1=0,y2=0,y3=0,y4=0,ic1=0,ic2=0,lp=0,bp=0,hz=0,spy=0,dc=0,bl=0,tz=0,dl=0,tone=0,ch=0,rp=0,ps=0; int cc=0,lp0=0,lpos=0,lst=0; } f1; struct F2 { double ic1=0, ic2=0; } f2;
+  struct FC { double g=.1,k=0,a1=1,a2=0,a3=0,k1=2,b1=1,b2=0,b3=0,k2=2,F=.1,q=2,drv=1,hpA=0,spfb=0,dlyT=1000,dlyLvl=0,dlyFb=0,tiltA=0; bool fmfb=false; int tilt=8; } fc;
+  std::vector<float> buf = std::vector<float>(131072, 0.0f); int bw = 0; double bpmNow = 120, wob = 0; int lastBrd = -1;
+  double dread(double d) const; void dwrite(double v); double bbd(double y); double fx(double y);
   double dcx = 0, dcy = 0, vcaF = 0, vcaC;
   double envExpo[257]; uint8_t dist[256];
   uint32_t rng = 0x12345678u;
