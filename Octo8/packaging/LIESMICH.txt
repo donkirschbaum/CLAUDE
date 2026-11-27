@@ -1,0 +1,32 @@
+OCTO8 – 8-Kanal-Synth (VST3 / AU / Standalone) für macOS
+==========================================================
+
+INSTALLATION (einfach)
+1. Rechtsklick auf "Install.command" > "Öffnen" > nochmal "Öffnen".
+   (Falls macOS das blockiert: Systemeinstellungen > Datenschutz & Sicherheit
+    > ganz unten "Trotzdem öffnen".)
+2. Ableton Live neu starten.
+
+INSTALLATION (Terminal, falls Schritt 1 nicht klappt)
+Terminal öffnen, in diesen Ordner wechseln (cd + Ordner ins Fenster ziehen), dann:
+
+  mkdir -p ~/Library/Audio/Plug-Ins/VST3 ~/Library/Audio/Plug-Ins/Components
+  cp -R Octo8.vst3 ~/Library/Audio/Plug-Ins/VST3/
+  cp -R Octo8.component ~/Library/Audio/Plug-Ins/Components/
+  xattr -dr com.apple.quarantine ~/Library/Audio/Plug-Ins/VST3/Octo8.vst3 ~/Library/Audio/Plug-Ins/Components/Octo8.component
+
+ABLETON
+- Einstellungen > Plug-Ins: "Plug-In-Quellen: Audio Units" und/oder "VST3 System-Ordner" an, dann "Neu scannen".
+- Octo8 liegt im Browser unter Plug-Ins > donkirschbaum (AU) bzw. Plug-Ins > VST3.
+- Octo8 auf eine MIDI-Spur ziehen.
+
+BEDIENUNG
+- Sequencer-Modus: läuft automatisch synchron, sobald Ableton spielt (Tempo vom Host).
+  Ohne Ableton-Transport: "Play" drücken (nutzt "BPM intern").
+- Drone-Modus: alle Kanäle klingen dauerhaft, solange Play aktiv ist, Ableton spielt
+  oder eine MIDI-Note gehalten wird.
+- MIDI-Noten transponieren alles relativ zu C3 (Note 60).
+- Alle Regler sind in Ableton automatisierbar. Sequencer-Pattern werden im Set gespeichert.
+
+Das Plugin ist nicht von Apple notarisiert (kein kostenpflichtiges Entwicklerkonto),
+deshalb der Quarantäne-Schritt oben.

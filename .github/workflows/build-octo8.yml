@@ -1,0 +1,58 @@
+name: Build Octo8 macOS (AU + VST3)
+
+on:
+  push:
+    paths:
+      - 'Octo8/**'
+      - '.github/workflows/build-octo8.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: Octo8
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: "Configure (universal arm64 + x86_64)"
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0
+
+      - name: Build
+        run: cmake --build build --config Release -j 4
+
+      - name: Package (ad-hoc signed)
+        run: |
+          A="build/Octo8_artefacts/Release"
+          mkdir -p dist/Octo8-macOS
+          cp -R "$A/VST3/Octo8.vst3" "$A/AU/Octo8.component" "$A/Standalone/Octo8.app" dist/Octo8-macOS/
+          codesign --force --deep -s - dist/Octo8-macOS/Octo8.vst3 dist/Octo8-macOS/Octo8.component dist/Octo8-macOS/Octo8.app
+          cp packaging/Install.command packaging/LIESMICH.txt dist/Octo8-macOS/
+          chmod +x dist/Octo8-macOS/Install.command
+          lipo -info dist/Octo8-macOS/Octo8.vst3/Contents/MacOS/Octo8
+          cd dist && ditto -c -k --keepParent Octo8-macOS ../Octo8-macOS.zip
+
+      - name: Validate Audio Unit (auval)
+        continue-on-error: true
+        run: |
+          mkdir -p ~/Library/Audio/Plug-Ins/Components
+          cp -R dist/Octo8-macOS/Octo8.component ~/Library/Audio/Plug-Ins/Components/
+          killall -9 AudioComponentRegistrar || true
+          sleep 2
+          auval -v aumu Oct8 Dnkb
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Octo8-macOS
+          path: Octo8/Octo8-macOS.zip
+
+      - name: Publish as release "octo8-latest"
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete octo8-latest --yes --cleanup-tag || true
+          gh release create octo8-latest Octo8-macOS.zip --title "Octo8 – neuester Build" --notes "Octo8 8-Kanal-Synth (VST3 + AU + Standalone, Universal). Automatisch gebaut aus ${GITHUB_SHA::7}. Installation: Zip entpacken, Rechtsklick auf Install.command > Öffnen (siehe LIESMICH.txt)." --target "$GITHUB_SHA"

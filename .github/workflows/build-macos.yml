@@ -5,6 +5,8 @@ on:
     paths-ignore:
       - 'Volta4/**'
       - '.github/workflows/build-volta4.yml'
+      - 'Octo8/**'
+      - '.github/workflows/build-octo8.yml'
   workflow_dispatch:
 
 permissions:
