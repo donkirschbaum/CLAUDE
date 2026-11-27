@@ -163,6 +163,14 @@ footer b{color:#cfcabd}
 .pwr{flex-wrap:wrap;justify-content:flex-end}
 .pi .pc{line-height:1.25}
 @media(max-width:520px){.brand{flex-wrap:wrap}.pwr{width:100%;justify-content:space-between}.pbtn{padding:6px 10px}}
+
+h2.legend.coll{cursor:pointer;user-select:none;-webkit-user-select:none;margin-bottom:0;border-bottom:none;padding:6px 0 4px}
+h2.legend.coll.open{border-bottom:1px solid #3a3b3f;margin-bottom:8px}
+h2.legend.coll .chev{display:inline-block;width:12px;color:#e8432e;transition:transform .15s}
+h2.legend.coll.open .chev{transform:rotate(90deg)}
+.cbody[hidden]{display:none}
+#brdk .kl{max-width:72px;overflow:hidden;text-overflow:ellipsis}
+@media(max-width:520px){.pwr{gap:4px;flex-wrap:nowrap}.pwr .knob{width:56px}.pbtn{padding:6px 8px;font-size:11px;letter-spacing:.04em}#prevBtn,#nextBtn{padding:6px 9px}}
 </style>
 </head>
 <body>
@@ -170,6 +178,7 @@ footer b{color:#cfcabd}
   <div class="panel brand">
     <div class="logo">mutable instruments<b>shruthi <i>xt</i></b></div>
     <div class="pwr">
+      <div class="knob" id="brdk"></div>
       <div class="knob" id="volk"></div>
       <button class="pbtn" id="prevBtn" title="vorheriges Preset">◀</button>
       <button class="pbtn" id="nextBtn" title="nächstes Preset">▶</button>
@@ -218,7 +227,8 @@ footer b{color:#cfcabd}
   </div>
 
   <div class="panel">
-    <h2 class="legend">step sequencer · arpeggiator</h2>
+    <h2 class="legend coll" data-target="seqBody"><span class="chev">▸</span> step sequencer · arpeggiator</h2>
+    <div id="seqBody" class="cbody" hidden>
     <div class="seqh">
       <span class="chip" data-mode="0">step</span><span class="chip" data-mode="1">arp</span><span class="chip" data-mode="2">seq</span>
       <button class="mini" id="bpmM">−</button><span class="val" id="bpmV">120</span><button class="mini" id="bpmP">+</button>
@@ -227,12 +237,16 @@ footer b{color:#cfcabd}
     <div class="slist" id="steps"><div class="sr sh"><span></span><span>#</span><span>gate</span><span>note</span><span>vel</span><span>value (stpseq)</span><span></span></div></div>
     <div class="hint">gate: rest → note → tie (legato, gebunden an den nächsten Step) · vel 0–7 · value 0–15 ist die Modulationsquelle „stpseq“</div>
   </div>
+  </div>
 
   <div class="panel">
-    <h2 class="legend">modulation matrix · 12 slots (slot 12 × modwheel)</h2>
+    <h2 class="legend coll" data-target="mtxBody"><span class="chev">▸</span> modulation matrix · operatoren</h2>
+    <div id="mtxBody" class="cbody" hidden>
+    <div class="hint" style="margin:0 4px 6px">12 Slots · Slot 12 wird über das Modwheel skaliert</div>
     <div class="mtx" id="mtx"></div>
     <h2 class="legend" style="margin-top:14px">operatoren</h2>
     <div class="ops" id="ops"></div>
+    </div>
   </div>
 
   <div class="panel" id="midiPanel" style="display:none">
@@ -250,8 +264,8 @@ footer b{color:#cfcabd}
   </div>
 
   <footer>
-    <b>Emuliert nach der Shruthi-1-Firmware v1.03:</b> Patch-Format (92 Byte), Modulationsmatrix mit Firmware-Skalierung (32 Quellen, 27 Ziele, Slot 12 über das Modwheel), Hüllkurven- und LFO-Raten aus den Original-Tabellen, 21 LFO-Formen mit sync/slave/master/1shot, 35 Wellenformen inkl. der Original-Wavetables, 14 Mixer-Operatoren (inkl. duo und ping-pong), Sub-/Transient-Generator, 33 Raga-Stimmungen, Step/Arp/Seq mit Groove-Tabellen, 12 Clock-Divisions und Tie/Legato-Steps. Filterboard (System-Seite): lpf/ssm, svf (Dual-Filter mit 6×6 Modi), pvk, 4pm (15 Modi).<br>
-    <b>Näherungen:</b> Die analogen Filter, die Grundwellen (saw/square/tri, z-Formen, vowel) und die FX-Boards dsp/dly/sp sind nachempfunden; dsp/dly/sp laufen als Tiefpass ohne Effekt. Am iPhone den Stumm-Schalter prüfen.<br>
+    <b>Emuliert nach der Shruthi-1-Firmware v1.03:</b> Patch-Format (92 Byte), Modulationsmatrix mit Firmware-Skalierung (32 Quellen, 27 Ziele, Slot 12 über das Modwheel), Hüllkurven- und LFO-Raten aus den Original-Tabellen, 21 LFO-Formen mit sync/slave/master/1shot, 35 Wellenformen inkl. der Original-Wavetables, 14 Mixer-Operatoren (inkl. duo und ping-pong), Sub-/Transient-Generator, 33 Raga-Stimmungen, Step/Arp/Seq mit Groove-Tabellen, 12 Clock-Divisions und Tie/Legato-Steps. 8 Filterboards (Regler oben links): lpf, ssm mit Hochpass, svf (6×6 Modi), dsp mit 16 Effekten, pvk, 4pm (15 Modi × 4 Flavours), dly mit Analog-Delay, sp mit Feedback.<br>
+    <b>Näherungen:</b> Die analogen Filter, die Effekte des dsp/dly-Boards und einige Grundwellen (saw/square/tri, z-Formen, vowel) sind nachempfunden. Am iPhone den Stumm-Schalter prüfen.<br>
     <span class="lic">Community-Presets: geteilt im Mutable-Instruments-Forum, gesammelt in <a href="https://github.com/joegiralt/ambika-shruthi-instruments">joegiralt/ambika-shruthi-instruments</a>; Urheber stehen in der Kategorie. Werks-Presets, Sequenzen, Wavetables und Tabellen stammen aus der <a href="https://github.com/pichenettes/shruthi-1">Shruthi-1-Firmware</a> von Émilie Gillet / Mutable Instruments, veröffentlicht unter der GNU GPL v3.0. Diese Emulation ist eine abgeleitete Arbeit und steht ebenfalls unter GPL v3.0.</span>
   </footer>
 
@@ -928,6 +942,7 @@ function boardLabels(){
  ['cut2','res2','fm1','fm2'].forEach((id,i)=>{a[id].abbr=bp[i][0];a[id].full=bp[i][1];a[id].max=bp[i][2];if(P[id]>bp[i][2]){P[id]=bp[i][2];patchDirty=true;}});
  document.querySelectorAll('[data-blabel]').forEach(el=>{const i=+el.dataset.blabel;el.textContent=bp[i][0]==='---'?'—':bp[i][1];});
  const bn=document.getElementById('boardName');if(bn)bn.textContent=BOARD_NAMES[G.brd];
+ if(typeof brdKnob!=='undefined')brdKnob.kl.textContent=LB.brd[G.brd]+' board';
  dirty=true;
 }
 
@@ -992,6 +1007,7 @@ function updateKnob(k){
  if(k.dyn)k.kl.textContent=d.abbr.trim();
 }
 def('vol','vol','volume',0,100,null,()=>Math.round(G.vol*100),v=>{G.vol=v/100;send({t:'vol',v:G.vol});saveG();});
+const brdKnob=makeKnob(document.getElementById('brdk'),()=>'brd','board');
 makeKnob(document.getElementById('volk'),()=>'vol','volume');
 const potsEl=document.getElementById('pots');
 for(let i=0;i<4;i++){const k=makeKnob(potsEl,()=>curPage().p[i],'');k.dyn=true;}
@@ -1001,7 +1017,7 @@ const XT=[
  ['oscillator 2',[['o2s','shape'],['o2p','param'],['o2r','range'],['o2d','detune']]],
  ['mixer',[['op','operator'],['bal','osc mix'],['subl','sub'],['nse','noise']]],
  ['filter',[['cut','cutoff'],['res','resonance'],['fenv','env1'],['flfo','lfo2']]],
- ['filter board',[['brd','board'],['cut2','#0'],['res2','#1'],['fm1','#2'],['fm2','#3']]],
+ ['filter board',[['cut2','#0'],['res2','#1'],['fm1','#2'],['fm2','#3']]],
  ['envelope 1',[['e1a','attack'],['e1d','decay'],['e1s','sustain'],['e1r','release']]],
  ['envelope 2',[['e2a','attack'],['e2d','decay'],['e2s','sustain'],['e2r','release']]],
  ['lfo 1',[['l1w','shape'],['l1r','rate'],['l1a','attack'],['l1m','mode']]],
@@ -1365,6 +1381,10 @@ if(PLUGIN){
  document.getElementById('mapClear').onclick=()=>send({t:'mapclear'});
  mrows.forEach((r,i)=>r.a.addEventListener('pointerdown',e=>{if(ui.learn){e.preventDefault();e.stopPropagation();ui.slot=i;learnPick('mam',null);}},true));
 }
+
+/* collapsible panels (start collapsed) */
+document.querySelectorAll('h2.coll').forEach(h=>h.addEventListener('click',()=>{const t=document.getElementById(h.dataset.target);t.hidden=!t.hidden;h.classList.toggle('open',!t.hidden);}));
+function openPanel(id){const t=document.getElementById(id);if(t&&t.hidden){t.hidden=false;const h=document.querySelector('h2.coll[data-target="'+id+'"]');if(h)h.classList.add('open');}}
 
 /* render loop */
 function frame(now){
