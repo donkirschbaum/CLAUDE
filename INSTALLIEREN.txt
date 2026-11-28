@@ -27,6 +27,16 @@ MIDI / Encoder
   Encoder bewegen. Endlos-Encoder werden meist automatisch als relativ erkannt, sonst Modus umstellen.
 - Alle Parameter inkl. der 12 Matrix-Slots sind auch in Ableton automatisierbar und per Ableton-MIDI-Map belegbar.
 
+Alle Parameter in Ableton sichtbar / per Cmd+M MIDI-mappbar machen
+- Das Plugin hat 91 Parameter. Ableton zeigt automatisch nur Plugins mit bis zu 64 Parametern.
+- Variante A (einmalig, empfohlen): Textdatei "Options.txt" anlegen in
+    ~/Library/Preferences/Ableton/Live 12.x.x/Options.txt   (Ordner deiner Live-Version)
+  mit genau dieser Zeile:
+    -_PluginAutoPopulateThreshold=-1
+  Live neu starten, Shruthi XT neu einfügen -> alle Parameter erscheinen.
+- Variante B: Am Gerät auf das Dreieck (Ausklappen) und "Configure" klicken, dann im Plugin-Fenster
+  die gewünschten Regler bewegen; Rechtsklick auf die Titelleiste -> "Als Standard-Konfiguration speichern".
+
 Tipps
 - Tempo: Der Sequencer folgt dem Ableton-Tempo (System-Seite, Parameter "syn").
 - JAM ist ein automatisierbarer Parameter ("jam") und lässt sich per MIDI-Map belegen.

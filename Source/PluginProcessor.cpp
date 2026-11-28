@@ -166,14 +166,14 @@ void ShruthiProcessor::setParamsFromPatch (const Patch& p)
         if (auto* prm = apvts.getParameter (kParamInfo[i].id))
         {
             const float norm = prm->convertTo0to1 ((float) p.v[i]);
-            if (std::abs (prm->getValue() - norm) > 1e-6f) prm->setValueNotifyingHost (norm);
+            if (std::abs (prm->getValue() - norm) > 1e-6f) { prm->beginChangeGesture(); prm->setValueNotifyingHost (norm); prm->endChangeGesture(); }
         }
     for (int i = 0; i < 12; ++i)
         for (int j = 0; j < 3; ++j)
             if (auto* prm = apvts.getParameter ("m" + juce::String (i + 1) + "sda"[j]))
             {
                 const float norm = prm->convertTo0to1 ((float) p.mtx[i][j]);
-                if (std::abs (prm->getValue() - norm) > 1e-6f) prm->setValueNotifyingHost (norm);
+                if (std::abs (prm->getValue() - norm) > 1e-6f) { prm->beginChangeGesture(); prm->setValueNotifyingHost (norm); prm->endChangeGesture(); }
             }
 }
 
@@ -286,8 +286,8 @@ void ShruthiProcessor::postUIEvent (const juce::var& m)
     else if (t == "at") pushMsg ({ mAt, 0, (float) m["v"] });
     else if (t == "cc") pushMsg ({ mCC, (int) m["i"], (float) m["v"] });
     else if (t == "panic") { pushMsg ({ mPanic, 0, 0 }); if (auto* p = apvts.getParameter ("jam")) p->setValueNotifyingHost (0.0f); }
-    else if (t == "jam") { if (auto* p = apvts.getParameter ("jam")) p->setValueNotifyingHost ((bool) m["on"] ? 1.0f : 0.0f); }
-    else if (t == "vol") { if (auto* p = apvts.getParameter ("vol")) p->setValueNotifyingHost ((float) m["v"]); }
+    else if (t == "jam") { if (auto* p = apvts.getParameter ("jam")) { p->beginChangeGesture(); p->setValueNotifyingHost ((bool) m["on"] ? 1.0f : 0.0f); p->endChangeGesture(); } }
+    else if (t == "vol") { if (auto* p = apvts.getParameter ("vol")) { p->beginChangeGesture(); p->setValueNotifyingHost ((float) m["v"]); p->endChangeGesture(); } }
     else if (t == "cur") currentProgram = (int) m["i"];
 }
 
