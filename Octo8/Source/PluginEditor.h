@@ -121,6 +121,7 @@ private:
     struct Content : public juce::Component
     {
         void paint (juce::Graphics&) override;
+        int soloMask = 0; // bit i = track i is soloed (channel or sequencer solo)
     } content;
 
     juce::TextButton playBtn { "Play" }, hostBtn { "Host" }, masterRnd { "Master Random" }, seqRnd { "Random Patterns" }, clearBtn { "Clear" };

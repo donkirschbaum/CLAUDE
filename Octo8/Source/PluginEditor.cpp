@@ -279,7 +279,7 @@ void SeqGrid::paint (Graphics& g)
     g.setFont (uiFont (12.0f, true));
     for (int r = 0; r < NCH; ++r)
     {
-        const bool active = proc.trackOn (r);
+        const bool active = proc.trackOn (r) && proc.audible (r);
         for (int c = 0; c < NSTEPS; ++c)
         {
             auto rc = cell (r, c);
@@ -408,6 +408,16 @@ void Octo8Editor::Content::paint (Graphics& g)
     g.drawText (String::fromUTF8 ("Klick = Step an/aus \xc2\xb7 Auf aktivem Step hoch/runter ziehen = Tonh\xc3\xb6he in Skalenstufen \xc2\xb7 "
                                   "mit Host an l\xc3\xa4uft er synchron zu Ableton"),
                 12, 402, 760, 18, Justification::centredLeft);
+
+    for (int i = 0; i < NCH; ++i)
+        if (soloMask & (1 << i))
+        {
+            auto band = Rectangle<float> (6.0f, (float) (L::gridY + i * L::rowH), 1188.0f, (float) L::rowH).reduced (0.0f, 0.5f);
+            g.setColour (channelColour (i).withAlpha (0.22f));
+            g.fillRoundedRectangle (band, 7.0f);
+            g.setColour (channelColour (i));
+            g.drawRoundedRectangle (band, 7.0f, 1.6f);
+        }
 
     for (int i = 0; i < NCH; ++i)
     {
@@ -565,5 +575,20 @@ void Octo8Editor::timerCallback()
     scope.repaint();
     grid.repaint();
     for (auto* s : strips) s->tick();
-    for (int i = 0; i < NCH; ++i) cards[i]->setAlpha (proc.audible (i) ? 1.0f : 0.45f);
+    int mask = 0;
+    for (int i = 0; i < NCH; ++i)
+    {
+        cards[i]->setAlpha (proc.audible (i) ? 1.0f : 0.45f);
+        const bool solo = proc.param (Octo8Processor::pid (i, "solo")) > 0.5f || proc.param (Octo8Processor::pid (i, "ssolo")) > 0.5f;
+        if (solo) mask |= 1 << i;
+        const float a = (proc.trackOn (i) && proc.audible (i)) ? 1.0f : 0.45f;
+        trackRnd[i]->setAlpha (a);
+        trackMute[i]->setAlpha (a);
+        trackSolo[i]->setAlpha (a);
+    }
+    if (mask != content.soloMask)
+    {
+        content.soloMask = mask;
+        content.repaint (0, L::gridY - 2, W, NCH * L::rowH + 4);
+    }
 }
