@@ -211,7 +211,8 @@ h2.legend.coll.open .chev{transform:rotate(90deg)}
   </div>
 
   <div class="panel">
-    <h2 class="legend">programme · <span id="bcount"></span></h2>
+    <h2 class="legend coll" data-target="prgBody"><span class="chev">▸</span> programme · <span id="bcount"></span></h2>
+    <div id="prgBody" class="cbody" hidden>
     <div class="brw">
       <div class="brwh">
         <select id="bcat"></select>
@@ -223,6 +224,7 @@ h2.legend.coll.open .chev{transform:rotate(90deg)}
         <button class="mini" id="saveU">aktuellen Klang als User speichern</button>
         <span class="hint" id="bmsg" style="margin:0"></span>
       </div>
+    </div>
     </div>
   </div>
 
@@ -250,7 +252,8 @@ h2.legend.coll.open .chev{transform:rotate(90deg)}
   </div>
 
   <div class="panel" id="midiPanel" style="display:none">
-    <h2 class="legend">midi-zuweisung · encoder / cc</h2>
+    <h2 class="legend coll" data-target="midiBody"><span class="chev">▸</span> midi-zuweisung · encoder / cc</h2>
+    <div id="midiBody" class="cbody" hidden>
     <div class="brwh" style="margin-bottom:8px">
       <button class="chip" id="learnBtn">learn</button>
       <span class="hint" id="learnMsg" style="margin:0">„learn“ antippen, dann einen Regler (oder Matrix-Slot, Jam, Volume) antippen und den Encoder bewegen.</span>
@@ -261,6 +264,7 @@ h2.legend.coll.open .chev{transform:rotate(90deg)}
       <button class="mini" id="mapClear">alle löschen</button>
     </div>
     <div class="hint">Modus: abs = normaler Regler (0–127) · rel64 = Endlos-Encoder 64 ± · rel2c = Endlos-Encoder Zweierkomplement (1 / 127) · tgl = Taster schaltet um. Die Zuweisung gilt für neue Instanzen und wird im Live-Set gespeichert.</div>
+    </div>
   </div>
 
   <footer>
