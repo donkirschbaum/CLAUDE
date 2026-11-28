@@ -1,0 +1,20 @@
+PULSEFORGE – rhythmischer Multi-Effekt (AU + VST3, macOS 11+, Apple Silicon & Intel)
+
+INSTALLATION
+1. Rechtsklick auf "Install.command" -> "Öffnen" -> nochmals "Öffnen" bestätigen.
+2. Ableton Live neu starten.
+3. Browser: Plug-ins -> donkirschbaum -> PulseForge (AU oder VST3).
+
+Falls macOS das Skript blockiert (Systemeinstellungen > Datenschutz & Sicherheit > "Trotzdem öffnen"),
+oder manuell im Terminal im entpackten Ordner:
+  cp -R PulseForge.component ~/Library/Audio/Plug-Ins/Components/
+  cp -R PulseForge.vst3 ~/Library/Audio/Plug-Ins/VST3/
+  xattr -dr com.apple.quarantine ~/Library/Audio/Plug-Ins/Components/PulseForge.component
+  xattr -dr com.apple.quarantine ~/Library/Audio/Plug-Ins/VST3/PulseForge.vst3
+
+BEDIENUNG
+- Gate-Zeile: Klick schaltet Step an/aus, Ziehen malt. Shift+Ziehen = stufenlose Lautstärke.
+- Filter-/Pan-Zeile: Balken mit der Maus ziehen. Doppelklick oder Alt+Klick setzt den Step zurück.
+- Rate: Notenwert pro Step (synchron zum Ableton-Tempo). Steps: Pattern-Länge 1-16. Swing.
+- Signalfluss: Drive -> Bitcrusher -> Step-Filter -> Step-Gate -> Step-Pan -> Delay -> Reverb -> Dry/Wet.
+- 6 Presets: Init, Trance Gate, Filter Walk, Stutter Pan, Dub Space, Lo-Fi Chop.

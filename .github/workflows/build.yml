@@ -1,0 +1,104 @@
+name: Build macOS
+
+on:
+  push:
+    branches: [pulseforge]
+    tags: ["pulseforge-v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  macos:
+    runs-on: macos-latest
+    env:
+      ARTEFACTS: build/PulseForge_artefacts/Release
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure (universal arm64 + x86_64)
+        run: >
+          cmake -B build -G Xcode
+          -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
+          -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0
+          -DPULSEFORGE_BUILD_TESTS=ON
+
+      - name: Build
+        run: cmake --build build --config Release --parallel 4 -- -quiet
+
+      - name: DSP tests (simulated Ableton transport, all presets)
+        run: |
+          T=$(find build -type f -perm -u+x -path "*pulseforge_test_artefacts*" -name "*ulse*orge*est*" | head -1)
+          echo "running $T"
+          "$T"
+
+      - name: Ad-hoc code signing
+        run: |
+          codesign --force --deep --sign - "$ARTEFACTS/VST3/PulseForge.vst3"
+          codesign --force --deep --sign - "$ARTEFACTS/AU/PulseForge.component"
+          codesign --force --deep --sign - "$ARTEFACTS/Standalone/PulseForge.app"
+          lipo -info "$ARTEFACTS/VST3/PulseForge.vst3/Contents/MacOS/PulseForge"
+
+      - name: Validate (pluginval + auval)
+        continue-on-error: true
+        run: |
+          curl -sSL -o pluginval.zip https://github.com/Tracktion/pluginval/releases/latest/download/pluginval_macOS.zip
+          unzip -q pluginval.zip
+          ./pluginval.app/Contents/MacOS/pluginval --strictness-level 8 --validate-in-process \
+              --timeout-ms 300000 "$ARTEFACTS/VST3/PulseForge.vst3"
+          mkdir -p ~/Library/Audio/Plug-Ins/Components
+          cp -R "$ARTEFACTS/AU/PulseForge.component" ~/Library/Audio/Plug-Ins/Components/
+          killall -9 AudioComponentRegistrar 2>/dev/null || true
+          sleep 3
+          auval -v aufx Plfg Dkbm
+
+      - name: Package (.pkg installer + .zip)
+        run: |
+          VERSION=$(sed -n 's/^project(PulseForge VERSION \([0-9.]*\).*/\1/p' CMakeLists.txt)
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          chmod +x packaging/scripts/postinstall
+
+          # ---- .pkg (installs to /Library/Audio/Plug-Ins, no quarantine issues)
+          mkdir -p pkgroot/Library/Audio/Plug-Ins/VST3 pkgroot/Library/Audio/Plug-Ins/Components
+          cp -R "$ARTEFACTS/VST3/PulseForge.vst3" pkgroot/Library/Audio/Plug-Ins/VST3/
+          cp -R "$ARTEFACTS/AU/PulseForge.component" pkgroot/Library/Audio/Plug-Ins/Components/
+          pkgbuild --analyze --root pkgroot components.plist
+          i=0
+          while /usr/libexec/PlistBuddy -c "Print :$i" components.plist >/dev/null 2>&1; do
+            /usr/libexec/PlistBuddy -c "Set :$i:BundleIsRelocatable false" components.plist || true
+            i=$((i+1))
+          done
+          pkgbuild --root pkgroot --component-plist components.plist \
+                   --identifier com.donkirschbaum.pulseforge.pkg --version "$VERSION" \
+                   --install-location / --scripts packaging/scripts \
+                   "PulseForge-$VERSION-macOS.pkg"
+
+          # ---- .zip (manual install + standalone app)
+          mkdir -p "dist/PulseForge-$VERSION-macOS"
+          cp -R "$ARTEFACTS/VST3/PulseForge.vst3" "$ARTEFACTS/AU/PulseForge.component" \
+                "$ARTEFACTS/Standalone/PulseForge.app" "dist/PulseForge-$VERSION-macOS/"
+          cp packaging/Install.command packaging/LIESMICH.txt "dist/PulseForge-$VERSION-macOS/"
+          chmod +x "dist/PulseForge-$VERSION-macOS/Install.command"
+          (cd dist && ditto -c -k --keepParent "PulseForge-$VERSION-macOS" "../PulseForge-$VERSION-macOS.zip")
+          ls -la *.pkg *.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PulseForge-macOS
+          path: |
+            PulseForge-*-macOS.pkg
+            PulseForge-*-macOS.zip
+
+      - name: Publish release
+        if: github.ref == 'refs/heads/pulseforge' || startsWith(github.ref, 'refs/tags/pulseforge-v')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: pulseforge-v${{ env.VERSION }}
+          target_commitish: ${{ github.sha }}
+          name: PulseForge v${{ env.VERSION }}
+          make_latest: false
+          body_path: packaging/RELEASE_NOTES.md
+          files: |
+            PulseForge-*-macOS.pkg
+            PulseForge-*-macOS.zip
