@@ -45,8 +45,17 @@ public:
     void removeCustom (int libIndex);
     void setRegion (int t, float start, float end);
 
+    // --- Verlauf: Zurück / Vor ---
+    void pushHistory();
+    void undo();
+    void redo();
+    bool canUndo() const { return histIdx > 0 || (histIdx >= 0 && stateDiffersFrom (histIdx)); }
+    bool canRedo() const { return histIdx >= 0 && histIdx < (int) hist.size() - 1; }
+
     // --- Audio-Export des kompletten Loops ---
     void startExport();
+    bool renderExportNow();                     // synchron, für den Zieh-Button
+    bool isExportCurrent() const;               // passt die letzte WAV noch zum aktuellen Stand?
     double loopBeats (bool capped) const;       // Länge, bis sich alle Spuren wiederholen
     double exportBpm() const;
     static constexpr double maxExportBars = 128.0;
@@ -74,6 +83,16 @@ private:
     static juce::AudioProcessorValueTreeState::ParameterLayout createLayout();
     void cacheParams();
     void readParams (shaker::TrackParams* out, shaker::GlobalParams& g) const;
+    juce::MemoryBlock snapshot() const;
+    void restore (const juce::MemoryBlock& m);
+    bool stateDiffersFrom (int idx) const;
+    juce::String currentKey() const;
+    std::unique_ptr<juce::Thread> makeExportJob();
+    std::vector<juce::MemoryBlock> hist;
+    int histIdx = -1;
+    bool restoring = false;
+    bool inBatch = false;
+    juce::String exportKey;
     class ExportJob;
     std::unique_ptr<ExportJob> exportJob;
     void applyRoleMix (int t);

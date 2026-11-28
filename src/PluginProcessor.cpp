@@ -245,10 +245,8 @@ double ShakerProcessor::loopBeats (bool capped) const
     return capped ? juce::jmin (b, maxExportBars * 4.0) : b;
 }
 
-void ShakerProcessor::startExport()
+std::unique_ptr<juce::Thread> ShakerProcessor::makeExportJob()
 {
-    if (exportState.load() == 1) return;
-    if (exportJob) exportJob->stopThread (5000);
     const double bpm = exportBpm();
     const double beats = loopBeats (true);
     const double rate = getSampleRate() > 0 ? getSampleRate() : 48000.0;
@@ -259,10 +257,88 @@ void ShakerProcessor::startExport()
     auto f = juce::File::getSpecialLocation (juce::File::userMusicDirectory).getChildFile ("Shaker Lab Exports").getChildFile (name);
     exportInfo = barsTxt + (bars == 1.0 ? " Takt" : " Takte") + " @ " + juce::String (bpm, 1) + " BPM"
                  + (loopBeats (false) > beats + 1e-6 ? " (auf " + juce::String ((int) maxExportBars) + " Takte gekuerzt)" : juce::String());
+    exportKey = currentKey();
     exportProgress.store (0.0f);
     exportState.store (1);
-    exportJob = std::make_unique<ExportJob> (*this, rate, bpm, beats, f);
+    return std::make_unique<ExportJob> (*this, rate, bpm, beats, f);
+}
+
+void ShakerProcessor::startExport()
+{
+    if (exportState.load() == 1) return;
+    if (exportJob) exportJob->stopThread (5000);
+    exportJob.reset (static_cast<ExportJob*> (makeExportJob().release()));
     exportJob->startThread();
+}
+
+bool ShakerProcessor::renderExportNow()
+{
+    if (exportState.load() == 1 && exportJob) exportJob->stopThread (10000);
+    auto job = makeExportJob();
+    job->run();   // im aufrufenden Thread rendern
+    return exportState.load() == 2;
+}
+
+juce::String ShakerProcessor::currentKey() const
+{
+    auto m = snapshot();
+    juce::uint64 h = 1469598103934665603ull;   // FNV-1a
+    auto* d = static_cast<const juce::uint8*> (m.getData());
+    for (size_t i = 0; i < m.getSize(); ++i) { h ^= d[i]; h *= 1099511628211ull; }
+    return juce::String::toHexString ((juce::int64) h) + "@" + juce::String (exportBpm(), 3) + "@" + juce::String (getSampleRate());
+}
+
+bool ShakerProcessor::isExportCurrent() const
+{
+    return exportState.load() == 2 && exportFile.existsAsFile() && exportKey == currentKey();
+}
+
+// ---------------- Verlauf ----------------
+juce::MemoryBlock ShakerProcessor::snapshot() const
+{
+    juce::MemoryBlock m;
+    const_cast<ShakerProcessor*> (this)->getStateInformation (m);
+    return m;
+}
+
+void ShakerProcessor::restore (const juce::MemoryBlock& m)
+{
+    restoring = true;
+    setStateInformation (m.getData(), (int) m.getSize());
+    restoring = false;
+}
+
+bool ShakerProcessor::stateDiffersFrom (int idx) const
+{
+    return idx < 0 || idx >= (int) hist.size() || snapshot() != hist[(size_t) idx];
+}
+
+void ShakerProcessor::pushHistory()
+{
+    if (restoring) return;
+    auto m = snapshot();
+    if (histIdx >= 0 && histIdx < (int) hist.size() && hist[(size_t) histIdx] == m) return;
+    hist.erase (hist.begin() + (histIdx + 1), hist.end());
+    hist.push_back (std::move (m));
+    if (hist.size() > 100) hist.erase (hist.begin());
+    histIdx = (int) hist.size() - 1;
+}
+
+void ShakerProcessor::undo()
+{
+    if (histIdx < 0) return;
+    // ungespeicherte Änderungen (z. B. Regler) vorher sichern, damit "Vor" dorthin zurückführt
+    if (stateDiffersFrom (histIdx)) pushHistory();
+    if (histIdx <= 0) return;
+    --histIdx;
+    restore (hist[(size_t) histIdx]);
+}
+
+void ShakerProcessor::redo()
+{
+    if (! canRedo()) return;
+    ++histIdx;
+    restore (hist[(size_t) histIdx]);
 }
 
 void ShakerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi)
@@ -360,6 +436,7 @@ void ShakerProcessor::genTrack (int t)
     Generator::genRole (t, false, cfg, pat, getParam ("density"), getParam ("ghost"), rng);
     for (int i = 0; i < kMaxSteps; ++i) engine.shared[t].pat[(size_t) i].store (pat[i]);
     uiVersion++;
+    pushHistory();
 }
 
 void ShakerProcessor::patternsOnly()
@@ -376,6 +453,7 @@ void ShakerProcessor::patternsOnly()
         setParam (tid (t, "rate"), (float) cfg.rate);
     }
     uiVersion++;
+    if (! inBatch) pushHistory();
 }
 
 void ShakerProcessor::samplesOnly()
@@ -388,15 +466,18 @@ void ShakerProcessor::samplesOnly()
             applyRoleMix (t);
         }
     uiVersion++;
+    if (! inBatch) pushHistory();
 }
 
 void ShakerProcessor::randomAll (bool firstRun)
 {
+    const juce::ScopedValueSetter<bool> batch (inBatch, true);
     for (auto* id : { "chaos", "evolve", "drift", "density", "ghost", "room", "roomsize" })
         setParam (id, 0.0f);
     samplesOnly();
     if (firstRun) setParam ("polydice", 1.0f);
     patternsOnly();
+    pushHistory();
 }
 
 void ShakerProcessor::mutateAll()
@@ -409,6 +490,7 @@ void ShakerProcessor::mutateAll()
         for (int i = 0; i < kMaxSteps; ++i) engine.shared[t].pat[(size_t) i].store (pat[i]);
     }
     uiVersion++;
+    pushHistory();
 }
 
 void ShakerProcessor::setSteps (int t, int n)
@@ -445,6 +527,7 @@ void ShakerProcessor::removeCustom (int libIndex)
             setSample (t, fallback);
     libVersion++;
     uiVersion++;
+    pushHistory();
 }
 
 // ---------------- Speichern / Laden im Projekt ----------------
@@ -520,6 +603,12 @@ void ShakerProcessor::setStateInformation (const void* data, int sizeInBytes)
         ++t;
     }
     uiVersion++;
+    if (! restoring)
+    {
+        hist.clear();
+        histIdx = -1;
+        pushHistory();
+    }
 }
 
 juce::AudioProcessorEditor* ShakerProcessor::createEditor() { return new ShakerEditor (*this); }

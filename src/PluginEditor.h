@@ -112,6 +112,7 @@ public:
     void resized() override;
     void mouseDown (const juce::MouseEvent&) override;
     void mouseDrag (const juce::MouseEvent&) override;
+    void mouseUp (const juce::MouseEvent&) override;
     void refreshSamples();
     void tick();
     std::function<void()> onClose;
@@ -131,6 +132,31 @@ private:
     std::unique_ptr<juce::FileChooser> chooser;
 };
 
+// Pfeil-Button für Zurück/Vor
+class ArrowButton2 : public juce::Button
+{
+public:
+    ArrowButton2 (bool left) : juce::Button (left ? "Zurueck" : "Vor"), isLeft (left) {}
+    void paintButton (juce::Graphics&, bool over, bool down) override;
+private:
+    bool isLeft;
+};
+
+// Button, aus dem die aktuelle Loop-WAV direkt in Ableton gezogen wird
+class DragOutButton : public juce::Component
+{
+public:
+    explicit DragOutButton (ShakerProcessor& p) : proc (p) { setMouseCursor (juce::MouseCursor::DraggingHandCursor); }
+    void paint (juce::Graphics&) override;
+    void mouseDown (const juce::MouseEvent&) override;
+    void mouseDrag (const juce::MouseEvent&) override;
+    void mouseUp (const juce::MouseEvent&) override;
+    std::function<void (const juce::String&)> onHint;
+private:
+    ShakerProcessor& proc;
+    bool ready = false, dragging = false, busy = false, pressed = false;
+};
+
 // Zeigt den Export-Fortschritt; die fertige WAV lässt sich von hier in Ableton ziehen.
 class ExportTile : public juce::Component
 {
@@ -140,8 +166,11 @@ public:
     void resized() override;
     void mouseDrag (const juce::MouseEvent&) override;
     void tick();
+    void setHint (const juce::String& h) { hint = h; hintUntil = juce::Time::getMillisecondCounterHiRes() + 4000; repaint(); }
 private:
     ShakerProcessor& proc;
+    juce::String hint;
+    double hintUntil = 0;
     juce::TextButton finder { "Im Finder zeigen" };
     int lastState = -1;
     float lastProg = -1;
@@ -162,6 +191,9 @@ private:
     ShakerProcessor& proc;
     ShakerLook look;
     juce::TextButton playB { "Play" }, randB { "Zufall" }, patB { "Pattern" }, smpB { "Samples" }, mutB { "Mutieren" }, expB { "Export" };
+    ArrowButton2 undoB { true }, redoB { false };
+    DragOutButton dragB { proc };
+    int tickCount = 0;
     ExportTile exportTile { proc };
     juce::ToggleButton polyDice { "Schritte/Modus/Tempo mitwuerfeln" };
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> polyAtt;

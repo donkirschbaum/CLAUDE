@@ -253,6 +253,7 @@ void StepGrid::mouseDrag (const juce::MouseEvent& e)
 
 void StepGrid::mouseUp (const juce::MouseEvent&)
 {
+    struct Push { ShakerProcessor& p; ~Push() { p.pushHistory(); } } push { proc };
     if (! levelMode)
     {
         auto& a = proc.engine.shared[t].pat[(size_t) downIdx];
@@ -272,7 +273,7 @@ TrackRow::TrackRow (ShakerProcessor& p, int track, std::function<void (int)> sel
     const auto acc = ui::track[t];
     addAndMakeVisible (grid);
     addAndMakeVisible (sampleBox);
-    sampleBox.onChange = [this] { if (sampleBox.getSelectedId() > 0) { proc.setSample (t, sampleBox.getSelectedId() - 1); onSelect (t); } };
+    sampleBox.onChange = [this] { if (sampleBox.getSelectedId() > 0) { proc.setSample (t, sampleBox.getSelectedId() - 1); proc.pushHistory(); onSelect (t); } };
     for (auto* b : { &edit, &aud, &muteB, &soloB, &dice, &minus, &plus, &pm, &pr })
     {
         addAndMakeVisible (*b);
@@ -285,16 +286,17 @@ TrackRow::TrackRow (ShakerProcessor& p, int track, std::function<void (int)> sel
     edit.onClick = [this] { onEdit (t); };
     aud.onClick = [this] { proc.engine.shared[t].audition.store (1); onSelect (t); };
     dice.onClick = [this] { proc.genTrack (t); grid.repaint(); };
-    minus.onClick = [this] { proc.setSteps (t, juce::roundToInt (proc.getParam (ShakerProcessor::tid (t, "steps"))) - 1); };
-    plus.onClick = [this] { proc.setSteps (t, juce::roundToInt (proc.getParam (ShakerProcessor::tid (t, "steps"))) + 1); };
-    pm.onClick = [this] { proc.setParam (ShakerProcessor::tid (t, "mode"), 0.0f); };
-    pr.onClick = [this] { proc.setParam (ShakerProcessor::tid (t, "mode"), 1.0f); };
+    minus.onClick = [this] { proc.setSteps (t, juce::roundToInt (proc.getParam (ShakerProcessor::tid (t, "steps"))) - 1); proc.pushHistory(); };
+    plus.onClick = [this] { proc.setSteps (t, juce::roundToInt (proc.getParam (ShakerProcessor::tid (t, "steps"))) + 1); proc.pushHistory(); };
+    pm.onClick = [this] { proc.setParam (ShakerProcessor::tid (t, "mode"), 0.0f); proc.pushHistory(); };
+    pr.onClick = [this] { proc.setParam (ShakerProcessor::tid (t, "mode"), 1.0f); proc.pushHistory(); };
     edit.setTooltip ("Sample-Editor");
     dice.setTooltip ("Pattern dieser Spur neu wuerfeln");
 
     for (int i = 0; i < kNumRates; ++i) rateBox.addItem (kRates[i].label, i + 1);
     addAndMakeVisible (rateBox);
     rateAtt = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (proc.apvts, ShakerProcessor::tid (t, "rate"), rateBox);
+    rateBox.onChange = [this] { juce::MessageManager::callAsync ([this] { proc.pushHistory(); }); };
 
     styleLabel (stepsLbl, 13.0f, ui::text, juce::Justification::centred);
     styleLabel (cycLbl, 12.0f, ui::mute);
@@ -498,6 +500,7 @@ SampleEditorView::SampleEditorView (ShakerProcessor& p) : proc (p)
     {
         if (sampleBox.getSelectedId() <= 0) return;
         proc.setSample (t, sampleBox.getSelectedId() - 1);
+        proc.pushHistory();
         zoomAll();
         proc.engine.shared[t].audition.store (2);
     };
@@ -527,10 +530,11 @@ SampleEditorView::SampleEditorView (ShakerProcessor& p) : proc (p)
         {
             auto& sh = proc.engine.shared[t];
             proc.setRegion (t, juce::jmin (s->onset, sh.end.load() - 0.003f), sh.end.load());
+            proc.pushHistory();
             repaint();
         }
     };
-    resetB.onClick = [this] { proc.setSample (t, proc.engine.shared[t].sample.load()); zoomAll(); };
+    resetB.onClick = [this] { proc.setSample (t, proc.engine.shared[t].sample.load()); proc.pushHistory(); zoomAll(); };
     prev.onClick = [this] { proc.engine.shared[t].audition.store (2); };
     auto nudge = [this] (bool startMarker, int dir)
     {
@@ -541,6 +545,7 @@ SampleEditorView::SampleEditorView (ShakerProcessor& p) : proc (p)
         if (startMarker) a = juce::jlimit (0.0f, b - 0.003f, a + d);
         else b = juce::jlimit (a + 0.003f, (float) s->lengthSeconds(), b + d);
         proc.setRegion (t, a, b);
+        proc.pushHistory();
         repaint();
     };
     sL.onClick = [nudge] { nudge (true, -1); };
@@ -559,6 +564,7 @@ SampleEditorView::SampleEditorView (ShakerProcessor& p) : proc (p)
                                   if (idx >= 0)
                                   {
                                       proc.setSample (t, idx);
+                                      proc.pushHistory();
                                       zoomAll();
                                       proc.engine.shared[t].audition.store (2);
                                   }
@@ -714,6 +720,7 @@ void SampleEditorView::mouseDown (const juce::MouseEvent& e)
 }
 
 void SampleEditorView::mouseDrag (const juce::MouseEvent& e) { if (drag) moveMarker (e.position.x); }
+void SampleEditorView::mouseUp (const juce::MouseEvent&) { if (drag) proc.pushHistory(); drag = 0; }
 
 void SampleEditorView::moveMarker (float x)
 {
@@ -733,6 +740,78 @@ void SampleEditorView::tick()
     auto& sh = proc.engine.shared[t];
     const double el = (juce::Time::getMillisecondCounterHiRes() - sh.previewStartMs.load()) / 1000.0;
     if (el > -0.1 && el < 5.0) repaint (waveArea().toNearestInt().expanded (2));
+}
+
+// ================= Pfeil- und Zieh-Button =================
+void ArrowButton2::paintButton (juce::Graphics& g, bool over, bool down)
+{
+    auto r = getLocalBounds().toFloat().reduced (0.5f);
+    auto base = ui::panel2;
+    if (over && isEnabled()) base = base.brighter (0.08f);
+    if (down) base = base.darker (0.15f);
+    g.setColour (base);
+    g.fillRoundedRectangle (r, 7.0f);
+    g.setColour (ui::line);
+    g.drawRoundedRectangle (r, 7.0f, 1.0f);
+    const auto c = r.getCentre();
+    juce::Path p;
+    const float w = 7.0f, h = 8.0f;
+    if (isLeft) p.addTriangle (c.x + w * 0.5f, c.y - h, c.x + w * 0.5f, c.y + h, c.x - w, c.y);
+    else p.addTriangle (c.x - w * 0.5f, c.y - h, c.x - w * 0.5f, c.y + h, c.x + w, c.y);
+    g.setColour (isEnabled() ? ui::text : ui::mute.withAlpha (0.4f));
+    g.fillPath (p);
+}
+
+void DragOutButton::paint (juce::Graphics& g)
+{
+    auto r = getLocalBounds().toFloat().reduced (0.5f);
+    const auto acc = ui::track[2];
+    g.setColour (pressed ? acc.withAlpha (0.55f) : acc.withAlpha (0.25f));
+    g.fillRoundedRectangle (r, 7.0f);
+    g.setColour (acc);
+    g.drawRoundedRectangle (r, 7.0f, 1.2f);
+    // Pfeil nach unten
+    const float ax = r.getX() + 16, ay = r.getCentreY();
+    juce::Path p;
+    p.addRectangle (ax - 1.5f, ay - 8, 3, 9);
+    p.addTriangle (ax - 6, ay, ax + 6, ay, ax, ay + 7);
+    g.setColour (ui::text);
+    g.fillPath (p);
+    g.setFont (ui::font (13.0f, true));
+    g.drawText (busy ? "Rendert ..." : "In Ableton ziehen", r.withTrimmedLeft (28), juce::Justification::centredLeft);
+}
+
+void DragOutButton::mouseDown (const juce::MouseEvent&)
+{
+    pressed = true;
+    ready = proc.isExportCurrent();
+    if (! ready)
+    {
+        // aktueller Loop ist noch nicht exportiert: jetzt rendern (geht schneller als Echtzeit)
+        busy = true;
+        repaint();
+        juce::MouseCursor::showWaitCursor();
+        ready = proc.renderExportNow();
+        juce::MouseCursor::hideWaitCursor();
+        busy = false;
+    }
+    repaint();
+}
+
+void DragOutButton::mouseDrag (const juce::MouseEvent& e)
+{
+    if (! ready || dragging || e.getDistanceFromDragStart() < 4) return;
+    dragging = true;
+    juce::DragAndDropContainer::performExternalDragDropOfFiles ({ proc.exportFile.getFullPathName() }, false, this,
+                                                                [this] { dragging = false; pressed = false; repaint(); });
+}
+
+void DragOutButton::mouseUp (const juce::MouseEvent& e)
+{
+    pressed = false;
+    if (! dragging && e.getDistanceFromDragStart() < 4 && onHint)
+        onHint (ready ? "Gedrueckt halten und auf eine Ableton-Spur ziehen" : "Export fehlgeschlagen");
+    repaint();
 }
 
 // ================= Export-Kachel =================
@@ -797,8 +876,9 @@ void ExportTile::paint (juce::Graphics& g)
         g.setColour (ui::text);
         g.setFont (ui::font (11.5f));
         g.drawText (proc.exportInfo, txt.removeFromTop (16), juce::Justification::left);
-        g.setColour (ui::mute);
-        g.drawText (proc.exportFile.getFileName(), txt.removeFromTop (16), juce::Justification::left, true);
+        g.setColour (juce::Time::getMillisecondCounterHiRes() < hintUntil ? acc : ui::mute);
+        g.drawFittedText (juce::Time::getMillisecondCounterHiRes() < hintUntil ? hint : proc.exportFile.getFileName(),
+                          txt.removeFromTop (30).toNearestInt(), juce::Justification::topLeft, 2);
     }
 }
 
@@ -816,7 +896,7 @@ void ExportTile::tick()
     const float pr = proc.exportProgress.load();
     finder.setVisible (st == 2);
     setMouseCursor (st == 2 ? juce::MouseCursor::DraggingHandCursor : juce::MouseCursor::NormalCursor);
-    if (st != lastState || (st == 1 && std::abs (pr - lastProg) > 0.005f) || st == 0)
+    if (st != lastState || (st == 1 && std::abs (pr - lastProg) > 0.005f) || st == 0 || hintUntil > 0)
     {
         lastState = st; lastProg = pr;
         repaint();
@@ -832,6 +912,14 @@ ShakerEditor::ShakerEditor (ShakerProcessor& p) : AudioProcessorEditor (&p), pro
     expB.setTooltip ("Kompletten Loop als WAV rendern");
     expB.onClick = [this] { proc.startExport(); };
     addAndMakeVisible (exportTile);
+    addAndMakeVisible (undoB);
+    addAndMakeVisible (redoB);
+    addAndMakeVisible (dragB);
+    undoB.setTooltip ("Zurueck");
+    redoB.setTooltip ("Vor");
+    undoB.onClick = [this] { proc.undo(); refreshAll(); };
+    redoB.onClick = [this] { proc.redo(); refreshAll(); };
+    dragB.onHint = [this] (const juce::String& h) { exportTile.setHint (h); };
     playB.setClickingTogglesState (true);
     playB.setColour (juce::TextButton::buttonOnColourId, ui::track[1]);
     playB.setTooltip ("Interner Play, wenn der Host gestoppt ist");
@@ -897,18 +985,21 @@ void ShakerEditor::paint (juce::Graphics& g)
 
 void ShakerEditor::resized()
 {
-    playB.setBounds (180, 8, 70, 32);
-    randB.setBounds (262, 8, 90, 32);
-    patB.setBounds (356, 8, 90, 32);
-    smpB.setBounds (450, 8, 90, 32);
-    mutB.setBounds (544, 8, 90, 32);
-    expB.setBounds (638, 8, 90, 32);
-    polyDice.setBounds (738, 10, 200, 28);
-    status.setBounds (W - 116, 10, 100, 28);
+    playB.setBounds (166, 8, 58, 32);
+    undoB.setBounds (232, 8, 34, 32);
+    redoB.setBounds (268, 8, 34, 32);
+    randB.setBounds (310, 8, 80, 32);
+    patB.setBounds (394, 8, 80, 32);
+    smpB.setBounds (478, 8, 80, 32);
+    mutB.setBounds (562, 8, 80, 32);
+    expB.setBounds (650, 8, 72, 32);
+    dragB.setBounds (726, 8, 152, 32);
+    status.setBounds (W - 172, 10, 156, 28);
+    polyDice.setBounds (600, 136, 240, 24);
     exportTile.setBounds (848, 50, 198, 108);
     for (size_t i = 0; i < globals.size(); ++i)
         globals[i]->setBounds (18 + (int) i * 82, 50, 78, 92);
-    ratio.setBounds (20, 140, 820, 18);
+    ratio.setBounds (20, 140, 570, 18);
     for (int t = 0; t < kTracks; ++t)
         rows[t]->setBounds (8, rowsY + t * rowH, W - 16, rowH - 6);
     detail.setBounds (8, detailY, W - 16, H - detailY - 8);
@@ -948,6 +1039,11 @@ void ShakerEditor::timerCallback()
     if (sampleEd.isVisible()) sampleEd.tick();
     exportTile.tick();
     expB.setEnabled (proc.exportState.load() != 1);
+    if (++tickCount % 6 == 0)
+    {
+        undoB.setEnabled (proc.canUndo());
+        redoB.setEnabled (proc.canRedo());
+    }
 
     // Status und gemeinsamer Zyklus
     const bool hp = proc.hostPlaying.load();

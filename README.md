@@ -16,13 +16,15 @@ Manuell geht es auch: die beiden Bundles in die genannten Ordner kopieren und im
 ## Bedienung
 
 - **Ableton-Transport** startet und stoppt den Sequencer, das Tempo kommt vom Projekt. Ohne laufenden Host spielt der **Play**-Knopf mit dem internen Tempo (zum Ausprobieren).
+- **◀ / ▶ (Zurück / Vor)**: springt durch alle bisherigen Varianten – Zufall, Pattern, Samples, Mutieren, Würfeln pro Spur, Schritt-Bearbeitung, Sample-Wechsel und Zuschnitt. Reglerstände werden beim Zurückspringen mitgesichert.
 - **Zufall**: wählt vier zueinander passende Samples (Rollen *Main, Akzent, Textur, Farbe*) und baut passende Spuren. Setzt Chaos, Evolution, Pitch-Drift, Dichte, Ghosts, Raum und Raumgröße auf 0.
   **Pattern** würfelt nur die Spuren, **Samples** nur die Samples, **Mutieren** verändert einzelne Schritte.
 - **Schritte**: antippen = an/aus, hoch/runter ziehen = Lautstärke des Schritts, seitlich weiterziehen = über mehrere Schritte malen.
 - **PM / PR** pro Spur: Polymeter (jeder Schritt = 1/16) oder Polyrhythmus (alle Schritte teilen sich einen Takt). Daneben das **Tempo pro Spur** (/4 … x4).
 - Klick auf eine Spur zeigt unten ihre Regler: **Sound** (Gain, Tune, Finetune, ADSR, Klangformung), **Mix**, **Zufall**.
 - **Edit** öffnet den Sample-Editor: Sample wählen, eigene Dateien laden (WAV, AIFF, FLAC, MP3, M4A), Start- und Endpunkt ziehen, zoomen, vorhören.
-- **Export** rendert den kompletten Loop als WAV (24 Bit, Projekt-Samplerate und -Tempo) – so lange, bis sich alle vier Spuren wiederholen (höchstens 128 Takte). Ausklänge werden auf den Anfang gefaltet, der Loop läuft also nahtlos. Danach die Datei aus der Kachel rechts oben **direkt in eine Ableton-Spur ziehen**. Die Dateien liegen zusätzlich unter `Musik/Shaker Lab Exports`.
+- **Export** rendert den kompletten Loop als WAV (24 Bit, Projekt-Samplerate und -Tempo) – so lange, bis sich alle vier Spuren wiederholen (höchstens 128 Takte). Ausklänge werden auf den Anfang gefaltet, der Loop läuft also nahtlos. Danach die Datei aus der Kachel rechts oben **direkt in eine Ableton-Spur ziehen**.
+- **In Ableton ziehen** (Button oben): gedrückt halten und auf eine Ableton-Spur ziehen. Ist der aktuelle Loop noch nicht exportiert, wird er beim Drücken automatisch gerendert. Die Dateien liegen zusätzlich unter `Musik/Shaker Lab Exports`.
 - Alles – Pattern, Samples, Zuschnitte, eigene Sample-Pfade, Reglerstände – wird im Ableton-Projekt gespeichert. Alle Regler lassen sich automatisieren.
 
 ## Selbst bauen
