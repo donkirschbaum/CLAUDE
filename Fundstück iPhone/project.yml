@@ -1,0 +1,95 @@
+# Generate the Xcode project with:  xcodegen generate
+name: Fundstueck
+options:
+  bundleIdPrefix: com.example
+  deploymentTarget:
+    iOS: "16.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    DEVELOPMENT_TEAM: ""            # ← deine Team-ID eintragen (oder in Xcode unter Signing wählen)
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    CODE_SIGN_STYLE: Automatic
+    GCC_C_LANGUAGE_STANDARD: gnu11
+    CLANG_ENABLE_MODULES: YES
+    GCC_OPTIMIZATION_LEVEL_Release: 3
+
+targets:
+  Fundstueck:
+    type: application
+    platform: iOS
+    sources:
+      - path: App
+      - path: Shared
+    settings:
+      base:
+        PRODUCT_NAME: Fundstueck
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.fundstueck
+        CODE_SIGN_ENTITLEMENTS: App/Fundstueck.entitlements
+        SWIFT_OBJC_BRIDGING_HEADER: Shared/DSP/Fundstueck-Bridging-Header.h
+        TARGETED_DEVICE_FAMILY: "1,2"
+        ASSETCATALOG_COMPILER_APPICON_NAME: ""
+    info:
+      path: App/Info.plist
+      properties:
+        CFBundleDisplayName: Fundstück
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        LSRequiresIPhoneOS: true
+        UILaunchScreen: {}
+        UIApplicationSupportsIndirectInputEvents: true
+        NSMicrophoneUsageDescription: Fundstück nimmt Geräusche auf und baut daraus Drum-Sounds.
+        UISupportsDocumentBrowser: false
+        UIFileSharingEnabled: true
+        LSSupportsOpeningDocumentsInPlace: false
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+    dependencies:
+      - target: FundstueckAU
+        embed: true
+
+  FundstueckAU:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: AUExtension
+      - path: Shared
+    settings:
+      base:
+        PRODUCT_NAME: FundstueckAU
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.fundstueck.au
+        CODE_SIGN_ENTITLEMENTS: AUExtension/FundstueckAU.entitlements
+        SWIFT_OBJC_BRIDGING_HEADER: Shared/DSP/Fundstueck-Bridging-Header.h
+        TARGETED_DEVICE_FAMILY: "1,2"
+        APPLICATION_EXTENSION_API_ONLY: YES
+    info:
+      path: AUExtension/Info.plist
+      properties:
+        CFBundleDisplayName: Fundstück AU
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.AudioUnit-UI
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).AudioUnitViewController
+          NSExtensionAttributes:
+            AudioComponents:
+              - name: "Fundstück: Drums"
+                description: Found-sound drum machine
+                manufacturer: Fdst
+                type: aumu
+                subtype: fdsk
+                version: 65536
+                sandboxSafe: true
+                tags:
+                  - Drums
+                  - Synthesizer
