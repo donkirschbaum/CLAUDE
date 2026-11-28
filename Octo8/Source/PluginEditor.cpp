@@ -556,7 +556,7 @@ void Octo8Editor::timerCallback()
     else if (proc.param ("play") > 0.5f)
         st = seq ? u ("Sequencer \xc2\xb7 ") + tempo + " BPM" : u ("Drone l\xc3\xa4uft");
     else
-        st = seq ? (sync ? u ("Bereit \xc2\xb7 wartet auf Ableton oder Play") : u ("Bereit \xc2\xb7 Play dr\xc3\xbccken"))
+        st = seq ? (sync ? u ("Bereit \xc2\xb7 wartet auf Ableton oder Play") : u ("Bereit \xc2\xb7 Play dr\xc3\xbc" "cken"))
                  : u ("Drone: Play oder MIDI-Note");
     bpm->slider.setEnabled (! (sync && proc.hostBpmKnown.load()));
     bpm->setAlpha (bpm->slider.isEnabled() ? 1.0f : 0.6f);
