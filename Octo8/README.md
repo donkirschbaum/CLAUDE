@@ -10,7 +10,7 @@
 - Je Kanal **Gain, Tune (±24 HT mit Notenanzeige), Finetune (±100 ct), Random, Mute, Solo**
 - **Tonart + Skala** (18 Skalen); **Master Random** und Kanal-Random würfeln nur Töne aus der Skala, Tonartwechsel quantisiert automatisch
 - **16-Step-Sequencer** für alle 8 Spuren mit Random/Mute/Solo je Spur, Tonhöhe pro Step in Skalenstufen (auf Step ziehen), Gate-Länge
-- **Synchron zu Ableton**: spielt der Host, folgt der Sequencer Tempo und Position; sonst intern mit eigenem BPM
+- **Master BPM + Host-Button**: Host an = Tempo und Start/Stop kommen von Ableton (BPM-Regler zeigt das Host-Tempo); Host aus = eigenes Master-BPM, Start mit Play
 - **Drone-Modus**: alle Kanäle klingen dauerhaft (Play, Host-Transport oder gehaltene MIDI-Note)
 - MIDI-Noten transponieren alles relativ zu C3
 - Je Spur **Filter (LP/HP/BP, Cutoff, Resonanz)** und **ADSR-Hüllkurve**

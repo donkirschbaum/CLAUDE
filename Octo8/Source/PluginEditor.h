@@ -23,6 +23,7 @@ public:
     void resized() override;
     void paint (juce::Graphics&) override;
     juce::Slider slider;
+    std::function<juce::String()> valueOverride; // non-empty result replaces the value text
 
 private:
     juce::String name;
@@ -122,11 +123,11 @@ private:
         void paint (juce::Graphics&) override;
     } content;
 
-    juce::TextButton playBtn { "Play" }, masterRnd { "Master Random" }, seqRnd { "Random Patterns" }, clearBtn { "Clear" };
+    juce::TextButton playBtn { "Play" }, hostBtn { "Host" }, masterRnd { "Master Random" }, seqRnd { "Random Patterns" }, clearBtn { "Clear" };
     std::unique_ptr<ChoiceButtons> modeBtns;
     juce::ComboBox keyBox, scaleBox;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> aKey, aScale;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> aPlay;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> aPlay, aHost;
     std::unique_ptr<Knob> master, bpm, gate;
     Scope scope;
     juce::OwnedArray<Strip> strips;

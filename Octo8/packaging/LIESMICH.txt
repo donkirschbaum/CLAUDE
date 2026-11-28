@@ -21,8 +21,9 @@ ABLETON
 - Octo8 auf eine MIDI-Spur ziehen.
 
 BEDIENUNG
-- Sequencer-Modus: läuft automatisch synchron, sobald Ableton spielt (Tempo vom Host).
-  Ohne Ableton-Transport: "Play" drücken (nutzt "BPM intern").
+- Host-Button (oben, neben Master BPM):
+    an  = Tempo und Start/Stop kommen von Ableton, der Sequencer läuft taktgenau mit.
+    aus = Octo8 ignoriert Ableton, Tempo über "Master BPM", Start mit "Play".
 - Drone-Modus: alle Kanäle klingen dauerhaft, solange Play aktiv ist, Ableton spielt
   oder eine MIDI-Note gehalten wird.
 - MIDI-Noten transponieren alles relativ zu C3 (Note 60).

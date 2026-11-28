@@ -75,6 +75,7 @@ public:
     std::atomic<int> hitCount[octo::NCH];
     std::atomic<bool> hostPlaying { false };
     std::atomic<float> hostBpm { 120.0f };
+    std::atomic<bool> hostBpmKnown { false };
 
     static constexpr int SCOPE = 4096;
     std::array<float, SCOPE> scope {};
@@ -114,7 +115,7 @@ private:
     {
         std::atomic<float> *wave, *noise, *nt, *gain, *tune, *fine, *mute, *solo, *ft, *cut, *q, *a, *d, *s, *r, *smute, *ssolo;
     } cp[octo::NCH];
-    std::atomic<float> *pKey, *pScale, *pMode, *pPlay, *pBpm, *pGate, *pMaster;
+    std::atomic<float> *pKey, *pScale, *pMode, *pPlay, *pBpm, *pHost, *pGate, *pMaster;
 
     WaveBank bank;
     std::vector<float> noiseBuf[octo::NNOISE];

@@ -122,6 +122,7 @@ Octo8Processor::Octo8Processor()
     pMode = apvts.getRawParameterValue ("mode");
     pPlay = apvts.getRawParameterValue ("play");
     pBpm = apvts.getRawParameterValue ("bpm");
+    pHost = apvts.getRawParameterValue ("hostsync");
     pGate = apvts.getRawParameterValue ("gate");
     pMaster = apvts.getRawParameterValue ("master");
     for (int i = 0; i < NCH; ++i)
@@ -150,7 +151,8 @@ AudioProcessorValueTreeState::ParameterLayout Octo8Processor::createLayout()
     L.add (std::make_unique<AudioParameterChoice> (ParameterID { "scale", 1 }, "Skala", scl, 0));
     L.add (std::make_unique<AudioParameterChoice> (ParameterID { "mode", 1 }, "Modus", StringArray { "Drone", "Sequencer" }, 1));
     L.add (std::make_unique<AudioParameterBool> (ParameterID { "play", 1 }, "Play (intern)", false));
-    L.add (std::make_unique<AudioParameterInt> (ParameterID { "bpm", 1 }, "BPM (intern)", 40, 220, 118));
+    L.add (std::make_unique<AudioParameterInt> (ParameterID { "bpm", 1 }, "Master BPM", 40, 220, 118));
+    L.add (std::make_unique<AudioParameterBool> (ParameterID { "hostsync", 1 }, "Host Sync", true));
     L.add (std::make_unique<AudioParameterFloat> (ParameterID { "gate", 1 }, "Gate", NormalisableRange<float> (0.05f, 1.0f, 0.01f), 0.5f,
                                                   AudioParameterFloatAttributes().withStringFromValueFunction (pct)));
     L.add (std::make_unique<AudioParameterFloat> (ParameterID { "master", 1 }, "Master", NormalisableRange<float> (0.0f, 1.0f, 0.01f), 0.6f,
@@ -434,16 +436,17 @@ void Octo8Processor::processBlock (AudioBuffer<float>& buffer, MidiBuffer& midi)
         else if (m.isAllNotesOff() || m.isAllSoundOff()) held = 0;
     }
 
-    bool hp = false;
+    bool hp = false, known = false;
+    const bool hostSync = pHost->load() > 0.5f;
     double bpm = pBpm->load(), hostPpq = 0;
     if (auto* ph = getPlayHead())
         if (auto pos = ph->getPosition())
         {
-            hp = pos->getIsPlaying();
-            if (auto b = pos->getBpm()) bpm = hp ? *b : bpm;
-            if (auto b = pos->getBpm()) hostBpm = (float) *b;
+            if (auto b = pos->getBpm()) { hostBpm = (float) *b; known = true; if (hostSync) bpm = *b; }
+            hp = hostSync && pos->getIsPlaying();
             if (auto p = pos->getPpqPosition()) hostPpq = *p; else hp = false;
         }
+    hostBpmKnown = known;
     hostPlaying = hp;
 
     const int key = (int) pKey->load();

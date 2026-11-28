@@ -118,7 +118,9 @@ void Knob::paint (Graphics& g)
     auto t = r.removeFromBottom (labelH);
     g.setColour (colours::ink);
     g.setFont (uiFont (12.5f, true));
-    g.drawFittedText (slider.getTextFromValue (slider.getValue()), t.removeFromTop (15), Justification::centred, 1, 0.8f);
+    String v = valueOverride ? valueOverride() : String();
+    if (v.isEmpty()) v = slider.getTextFromValue (slider.getValue());
+    g.drawFittedText (v, t.removeFromTop (15), Justification::centred, 1, 0.8f);
     g.setColour (colours::mute);
     g.setFont (uiFont (11.5f));
     g.drawFittedText (name, t, Justification::centredTop, 1, 0.8f);
@@ -392,8 +394,8 @@ void Octo8Editor::Content::paint (Graphics& g)
     g.setColour (colours::mute);
     g.setFont (uiFont (12.5f));
     g.drawText ("8-Kanal-Synth", 14, 48, 140, 18, Justification::centredLeft);
-    g.drawText ("Tonart", 448, 12, 70, 18, Justification::centredLeft);
-    g.drawText ("Skala", 528, 12, 100, 18, Justification::centredLeft);
+    g.drawText ("Tonart", 416, 12, 70, 18, Justification::centredLeft);
+    g.drawText ("Skala", 490, 12, 100, 18, Justification::centredLeft);
 
     g.setColour (colours::ink);
     g.setFont (uiFont (21.0f, true));
@@ -404,7 +406,7 @@ void Octo8Editor::Content::paint (Graphics& g)
     g.setColour (colours::mute);
     g.setFont (uiFont (12.5f));
     g.drawText (String::fromUTF8 ("Klick = Step an/aus \xc2\xb7 Auf aktivem Step hoch/runter ziehen = Tonh\xc3\xb6he in Skalenstufen \xc2\xb7 "
-                                  "l\xc3\xa4uft synchron, wenn Ableton spielt"),
+                                  "mit Host an l\xc3\xa4uft er synchron zu Ableton"),
                 12, 402, 760, 18, Justification::centredLeft);
 
     for (int i = 0; i < NCH; ++i)
@@ -430,7 +432,7 @@ Octo8Editor::Octo8Editor (Octo8Processor& p)
     playBtn.setColour (TextButton::buttonOnColourId, colours::accent);
     playBtn.setColour (TextButton::buttonColourId, colours::accent.withAlpha (0.25f));
     playBtn.setColour (TextButton::textColourOnId, Colours::white);
-    playBtn.setTooltip ("Interner Start; spielt Ableton, folgt der Sequencer automatisch dem Host");
+    playBtn.setTooltip ("Startet Octo8 ohne Ableton-Transport");
     aPlay = std::make_unique<AudioProcessorValueTreeState::ButtonAttachment> (p.apvts, "play", playBtn);
     playBtn.onStateChange = [this] { playBtn.setButtonText (playBtn.getToggleState() ? "Stop" : "Play"); };
 
@@ -455,11 +457,21 @@ Octo8Editor::Octo8Editor (Octo8Processor& p)
     for (int i = 0; i < NCH; ++i) content.addAndMakeVisible (strips.add (new Strip (p, i)));
 
     // ---- sequencer
-    bpm = std::make_unique<Knob> (p.apvts, "bpm", "BPM intern", colours::accent, 26);
+    bpm = std::make_unique<Knob> (p.apvts, "bpm", "Master BPM", colours::accent, 26);
+    bpm->valueOverride = [this]
+    {
+        if (proc.param ("hostsync") > 0.5f && proc.hostBpmKnown.load())
+            return String (proc.hostBpm.load(), 1);
+        return String();
+    };
+    hostBtn.setClickingTogglesState (true);
+    hostBtn.setColour (TextButton::buttonOnColourId, colours::soloOn);
+    hostBtn.setTooltip ("Host-Sync: Tempo und Start/Stop kommen von Ableton");
+    aHost = std::make_unique<AudioProcessorValueTreeState::ButtonAttachment> (p.apvts, "hostsync", hostBtn);
     gate = std::make_unique<Knob> (p.apvts, "gate", "Gate", colours::accent, 26);
     seqRnd.onClick = [this] { proc.randomAllTracks(); grid.repaint(); };
     clearBtn.onClick = [this] { proc.clearAll(); grid.repaint(); };
-    for (auto* c : std::initializer_list<Component*> { bpm.get(), gate.get(), &seqRnd, &clearBtn, &grid })
+    for (auto* c : std::initializer_list<Component*> { bpm.get(), &hostBtn, gate.get(), &seqRnd, &clearBtn, &grid })
         content.addAndMakeVisible (c);
 
     for (int i = 0; i < NCH; ++i)
@@ -481,19 +493,20 @@ Octo8Editor::Octo8Editor (Octo8Processor& p)
     for (int i = 0; i < NCH; ++i) content.addAndMakeVisible (cards.add (new FilterCard (p, i)));
 
     // ---- layout in design coordinates
-    playBtn.setBounds (150, 28, 86, 34);
-    modeBtns->setBounds (246, 28, 190, 34);
-    keyBox.setBounds (448, 32, 70, 30);
-    scaleBox.setBounds (528, 32, 190, 30);
-    masterRnd.setBounds (730, 28, 130, 34);
-    master->setBounds (866, 10, 58, 68);
-    scope.setBounds (932, 12, 256, 66);
+    playBtn.setBounds (150, 28, 78, 34);
+    modeBtns->setBounds (236, 28, 170, 34);
+    keyBox.setBounds (416, 32, 64, 30);
+    scaleBox.setBounds (490, 32, 172, 30);
+    masterRnd.setBounds (672, 28, 120, 34);
+    bpm->setBounds (798, 10, 58, 68);
+    hostBtn.setBounds (858, 28, 58, 34);
+    master->setBounds (922, 10, 58, 68);
+    scope.setBounds (988, 12, 200, 66);
 
     const float sw = (1176.0f - 7 * 6.0f) / NCH;
     for (int i = 0; i < NCH; ++i)
         strips[i]->setBounds (roundToInt (12 + i * (sw + 6)), L::stripY, roundToInt (sw), L::stripH);
 
-    bpm->setBounds (800, 368, 58, 66);
     gate->setBounds (862, 368, 58, 66);
     seqRnd.setBounds (930, 386, 140, 30);
     clearBtn.setBounds (1078, 386, 110, 30);
@@ -536,12 +549,18 @@ void Octo8Editor::timerCallback()
     const bool seq = proc.param ("mode") > 0.5f;
     auto u = [] (const char* t) { return String::fromUTF8 (t); };
     String st;
+    const bool sync = proc.param ("hostsync") > 0.5f;
+    const String tempo = (sync && proc.hostBpmKnown.load()) ? String (proc.hostBpm.load(), 1) : String ((int) proc.param ("bpm"));
     if (proc.hostPlaying.load())
-        st = u (seq ? "Host-Sync \xc2\xb7 " : "Drone \xc2\xb7 Host \xc2\xb7 ") + String (proc.hostBpm.load(), 1) + " BPM";
+        st = u (seq ? "Host-Sync \xc2\xb7 " : "Drone \xc2\xb7 Host \xc2\xb7 ") + tempo + " BPM";
     else if (proc.param ("play") > 0.5f)
-        st = seq ? u ("Sequencer \xc2\xb7 ") + String ((int) proc.param ("bpm")) + " BPM" : u ("Drone l\xc3\xa4uft");
+        st = seq ? u ("Sequencer \xc2\xb7 ") + tempo + " BPM" : u ("Drone l\xc3\xa4uft");
     else
-        st = seq ? u ("Bereit (Play oder Ableton starten)") : u ("Drone: Play oder MIDI-Note");
+        st = seq ? (sync ? u ("Bereit \xc2\xb7 wartet auf Ableton oder Play") : u ("Bereit \xc2\xb7 Play dr\xc3\xbccken"))
+                 : u ("Drone: Play oder MIDI-Note");
+    bpm->slider.setEnabled (! (sync && proc.hostBpmKnown.load()));
+    bpm->setAlpha (bpm->slider.isEnabled() ? 1.0f : 0.6f);
+    bpm->repaint();
     scope.status = st;
     scope.repaint();
     grid.repaint();
